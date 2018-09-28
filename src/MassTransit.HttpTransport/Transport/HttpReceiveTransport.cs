@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -14,30 +14,32 @@ namespace MassTransit.HttpTransport.Transport
 {
     using System.Threading;
     using System.Threading.Tasks;
+    using Contexts;
     using GreenPipes;
+    using GreenPipes.Agents;
     using MassTransit.Pipeline.Observables;
     using Topology;
     using Transports;
-    using Util;
 
 
     public class HttpReceiveTransport :
+        Supervisor,
         IReceiveTransport
     {
         readonly IHttpHost _host;
+        readonly IPipe<HttpHostContext> _hostPipe;
         readonly ReceiveObservable _receiveObservable;
-        readonly ReceiveSettings _receiveSettings;
         readonly ReceiveTransportObservable _receiveTransportObservable;
-        readonly IHttpReceiveEndpointTopology _topology;
+        readonly HttpReceiveEndpointContext _context;
 
-        public HttpReceiveTransport(IHttpHost host, ReceiveSettings receiveSettings, IHttpReceiveEndpointTopology topology)
+        public HttpReceiveTransport(IHttpHost host, HttpReceiveEndpointContext context, ReceiveObservable receiveObservable,
+            ReceiveTransportObservable receiveTransportObservable, IPipe<HttpHostContext> hostPipe)
         {
             _host = host;
-            _receiveSettings = receiveSettings;
-            _topology = topology;
-
-            _receiveObservable = new ReceiveObservable();
-            _receiveTransportObservable = new ReceiveTransportObservable();
+            _context = context;
+            _receiveObservable = receiveObservable;
+            _receiveTransportObservable = receiveTransportObservable;
+            _hostPipe = hostPipe;
         }
 
         public ConnectHandle ConnectReceiveTransportObserver(IReceiveTransportObserver observer)
@@ -57,48 +59,37 @@ namespace MassTransit.HttpTransport.Transport
             scope.Set(_host.Settings);
         }
 
-        public ReceiveTransportHandle Start(IPipe<ReceiveContext> receivePipe)
+        public ReceiveTransportHandle Start()
         {
-            var supervisor = new TaskSupervisor($"{TypeMetadataCache<HttpReceiveTransport>.ShortName} - {_host.Settings.GetInputAddress()}");
+            Task.Factory.StartNew(() => _host.HttpHostCache.Send(_hostPipe, Stopping), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
 
-            IPipe<OwinHostContext> hostPipe = Pipe.New<OwinHostContext>(cxt =>
-            {
-                cxt.HttpConsumer(receivePipe, _host.Settings, _receiveSettings, _receiveObservable, _receiveTransportObservable, supervisor, _topology);
-            });
-
-            var hostTask = _host.OwinHostCache.Send(hostPipe, supervisor.StoppingToken);
-
-            return new Handle(supervisor, hostTask);
+            return new Handle(this);
         }
 
         public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
         {
-            return _topology.PublishEndpointProvider.ConnectPublishObserver(observer);
+            return _context.ConnectPublishObserver(observer);
         }
 
         public ConnectHandle ConnectSendObserver(ISendObserver observer)
         {
-            return _topology.SendEndpointProvider.ConnectSendObserver(observer);
+            return _context.ConnectSendObserver(observer);
         }
 
 
         class Handle :
             ReceiveTransportHandle
         {
-            readonly Task _connectionTask;
-            readonly TaskSupervisor _supervisor;
+            readonly IAgent _agent;
 
-            public Handle(TaskSupervisor supervisor, Task connectionTask)
+            public Handle(IAgent agent)
             {
-                _supervisor = supervisor;
-                _connectionTask = connectionTask;
+                _agent = agent;
             }
 
             async Task ReceiveTransportHandle.Stop(CancellationToken cancellationToken)
             {
-                await _supervisor.Stop("Stop Receive Transport", cancellationToken).ConfigureAwait(false);
-
-                await _connectionTask.ConfigureAwait(false);
+                await _agent.Stop("Stop Receive Transport", cancellationToken).ConfigureAwait(false);
             }
         }
     }

@@ -16,6 +16,7 @@ namespace MassTransit.Serialization
     using System.Collections.Generic;
     using System.Linq;
     using System.Reflection;
+    using System.Runtime.Serialization;
     using Context;
     using GreenPipes.Internals.Extensions;
     using Newtonsoft.Json;
@@ -43,9 +44,13 @@ namespace MassTransit.Serialization
         Uri _responseAddress;
         Uri _sourceAddress;
 
-        public JsonConsumeContext(JsonSerializer deserializer, IObjectTypeDeserializer objectTypeDeserializer, ReceiveContext receiveContext, MessageEnvelope envelope)
+        public JsonConsumeContext(JsonSerializer deserializer, IObjectTypeDeserializer objectTypeDeserializer, ReceiveContext receiveContext,
+            MessageEnvelope envelope)
             : base(receiveContext)
         {
+            if (envelope == null)
+                throw new ArgumentNullException(nameof(envelope));
+
             _envelope = envelope;
             _deserializer = deserializer;
             _objectTypeDeserializer = objectTypeDeserializer;
@@ -64,6 +69,7 @@ namespace MassTransit.Serialization
         public override Uri DestinationAddress => _destinationAddress ?? (_destinationAddress = ConvertToUri(_envelope.DestinationAddress));
         public override Uri ResponseAddress => _responseAddress ?? (_responseAddress = ConvertToUri(_envelope.ResponseAddress));
         public override Uri FaultAddress => _faultAddress ?? (_faultAddress = ConvertToUri(_envelope.FaultAddress));
+        public override DateTime? SentTime => _envelope.SentTime;
         public override Headers Headers => _headers ?? (_headers = new JsonMessageHeaders(_objectTypeDeserializer, _envelope.Headers));
         public override HostInfo Host => _envelope.Host;
         public override IEnumerable<string> SupportedMessageTypes => _supportedTypes;

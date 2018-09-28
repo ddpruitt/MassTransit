@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,13 +12,24 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.AzureServiceBusTransport.Topology
 {
+    using System;
+    using Configuration;
     using MassTransit.Topology;
+    using Transport;
 
 
     public interface IServiceBusSendTopology :
         ISendTopology
     {
-        new IServiceBusMessageSendTopologyConfigurator<T> GetMessageTopology<T>()
+        new IServiceBusMessageSendTopology<T> GetMessageTopology<T>()
             where T : class;
+
+        SendSettings GetSendSettings(Uri address);
+
+        SendSettings GetErrorSettings(IQueueConfigurator configurator);
+        SendSettings GetDeadLetterSettings(IQueueConfigurator configurator);
+
+        SendSettings GetErrorSettings(ISubscriptionConfigurator configurator, string basePath);
+        SendSettings GetDeadLetterSettings(ISubscriptionConfigurator configurator, string basePath);
     }
 }

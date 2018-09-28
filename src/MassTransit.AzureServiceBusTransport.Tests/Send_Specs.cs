@@ -48,6 +48,38 @@ namespace MassTransit.AzureServiceBusTransport.Tests
             await _handler;
         }
     }
+    
+    [TestFixture, Explicit]
+    public class A_fault_on_the_receive_endpoint :
+        AzureServiceBusTestFixture
+    {
+        Task<ConsumeContext<PingMessage>> _handler;
+
+        protected override void ConfigureServiceBusReceiveEndpoint(IServiceBusReceiveEndpointConfigurator configurator)
+        {
+            _handler = Handled<PingMessage>(configurator);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            await Task.Delay(30000);
+            
+            await InputQueueSendEndpoint.Send(new PingMessage());
+        }
+
+        [Test]
+        public async Task Should_properly_reconnect_and_reconfigure_the_broker()
+        {
+            var context = await _handler;
+        }
+
+        [Test]
+        public async Task Should_succeed()
+        {
+            await _handler;
+        }
+    }
 
 
     [TestFixture]
@@ -91,7 +123,7 @@ namespace MassTransit.AzureServiceBusTransport.Tests
         [OneTimeSetUp]
         public async Task Setup()
         {
-            _requestClient = await Host.CreateRequestClient<PingMessage, PongMessage>(Bus, InputQueueAddress, TestTimeout);
+            _requestClient = await Host.CreateRequestClient<PingMessage, PongMessage>(InputQueueAddress, TestTimeout);
 
             _response = _requestClient.Request(new PingMessage());
         }
@@ -107,6 +139,21 @@ namespace MassTransit.AzureServiceBusTransport.Tests
             PongMessage message = await _response;
 
             Assert.AreEqual(message.CorrelationId, _ping.Result.Message.CorrelationId);
+        }
+
+        [Test]
+        public async Task Should_be_quick_on_the_subsequent_calls()
+        {
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
+            await _requestClient.Request(new PingMessage());
         }
     }
 }

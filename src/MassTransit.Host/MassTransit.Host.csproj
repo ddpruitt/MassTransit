@@ -1,9 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net452</TargetFrameworks>
+    <TargetFrameworks>net452;netcoreapp2.0</TargetFrameworks>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(TargetFramework)' == 'netcoreapp2.0' ">
+    <DefineConstants>$(DefineConstants);NETCORE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <PackageId>MassTransit.Host</PackageId>
@@ -12,16 +15,16 @@
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\MassTransit.Host.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Autofac" Version="4.6.2" />
-    <PackageReference Include="GreenPipes" Version="1.2.0" />
+    <PackageReference Include="Autofac" Version="4.8.1" />
+    <PackageReference Include="GreenPipes" Version="2.1.2" />
     <PackageReference Include="log4net" Version="2.0.8" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="Topshelf" Version="4.1.0" />
+    <PackageReference Include="Topshelf.Log4Net" Version="4.1.0" />
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml" />
-    <PackageReference Include="Topshelf" Version="4.0.3" />
-    <PackageReference Include="Topshelf.Log4Net" Version="4.0.3" />
     <ProjectReference Include="..\Containers\MassTransit.AutofacIntegration\MassTransit.AutofacIntegration.csproj" />
     <ProjectReference Include="..\Loggers\MassTransit.Log4NetIntegration\MassTransit.Log4NetIntegration.csproj" />
     <ProjectReference Include="..\MassTransit\MassTransit.csproj" />

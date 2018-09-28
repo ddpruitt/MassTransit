@@ -2,11 +2,11 @@
   <PropertyGroup>
     <RootNamespace>MassTransit.NLogIntegration</RootNamespace>
     <AssemblyName>MassTransit.NLogIntegration</AssemblyName>
-    <TargetFrameworks>net452</TargetFrameworks>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>..\..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
+    <TargetFrameworks>net452;netstandard2.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>portable</DebugType>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <PropertyGroup>
     <PackageId>MassTransit.NLog</PackageId>
@@ -15,11 +15,9 @@
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\MassTransit.NLogIntegration.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="GreenPipes" Version="1.2.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
-    <PackageReference Include="NLog" Version="4.4.12" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
+    <PackageReference Include="GreenPipes" Version="2.1.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="NLog" Version="4.5.10" />
     <ProjectReference Include="..\..\MassTransit\MassTransit.csproj" />
   </ItemGroup>
 </Project>

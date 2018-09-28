@@ -40,7 +40,7 @@ namespace MassTransit
                 expiredEndpointConfigurator.SubscribeMessageTopics = false;
 
                 // configure the turnout management endpoint
-                var temporaryQueueName = host.GetTemporaryQueueName("turnout-");
+                var temporaryQueueName = host.Topology.CreateTemporaryQueueName("turnout-");
                 busFactoryConfigurator.ReceiveEndpoint(host, temporaryQueueName, turnoutEndpointConfigurator =>
                 {
                     turnoutEndpointConfigurator.PrefetchCount = 100;
@@ -50,7 +50,7 @@ namespace MassTransit
                     turnoutEndpointConfigurator.EnableDeadLetteringOnMessageExpiration = true;
                     turnoutEndpointConfigurator.ForwardDeadLetteredMessagesTo = expiredQueueName;
 
-                    turnoutEndpointConfigurator.AutoDeleteOnIdle = TimeSpan.FromMinutes(5);
+                    turnoutEndpointConfigurator.AutoDeleteOnIdle = Defaults.TemporaryAutoDeleteOnIdle;
 
                     // configure the input queue endpoint
                     busFactoryConfigurator.ReceiveEndpoint(host, queueName, commandEndpointConfigurator =>

@@ -13,8 +13,8 @@
 namespace MassTransit.Topology.Conventions.CorrelationId
 {
     using System;
-    using System.Reflection;
     using Context;
+    using Context.SetCorrelationIds;
 
 
     public class PropertyCorrelationIdSelector<T> :

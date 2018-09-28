@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,38 +15,57 @@ namespace MassTransit.RabbitMqTransport.Contexts
     using System;
     using System.IO;
     using Context;
-    using MassTransit.Topology;
     using RabbitMQ.Client;
+    using Topology;
 
 
-    public class RabbitMqReceiveContext :
+    public sealed class RabbitMqReceiveContext :
         BaseReceiveContext,
         RabbitMqBasicConsumeContext
     {
         readonly byte[] _body;
+        readonly RabbitMqReceiveEndpointContext _receiveEndpointContext;
 
-        public RabbitMqReceiveContext(Uri inputAddress, string exchange, string routingKey, string consumerTag, ulong deliveryTag, byte[] body, bool redelivered,
-            IBasicProperties properties, IReceiveObserver observer, IReceiveEndpointTopology topology)
-            : base(inputAddress, redelivered, observer, topology)
+        public RabbitMqReceiveContext(Uri inputAddress, string exchange, string routingKey, string consumerTag, ulong deliveryTag, byte[] body,
+            bool redelivered,
+            IBasicProperties properties, IReceiveObserver observer, RabbitMqReceiveEndpointContext receiveEndpointContext)
+            : base(inputAddress, redelivered, observer, receiveEndpointContext)
         {
             Exchange = exchange;
             RoutingKey = routingKey;
             ConsumerTag = consumerTag;
             DeliveryTag = deliveryTag;
             _body = body;
+            _receiveEndpointContext = receiveEndpointContext;
             Properties = properties;
-
-            ((ReceiveContext)this).GetOrAddPayload<RabbitMqBasicConsumeContext>(() => this);
         }
 
         protected override IHeaderProvider HeaderProvider => new RabbitMqHeaderProvider(this);
+
         public string ConsumerTag { get; }
         public ulong DeliveryTag { get; }
         public string Exchange { get; }
         public string RoutingKey { get; }
         public IBasicProperties Properties { get; }
 
-        protected override Stream GetBodyStream()
+        byte[] RabbitMqBasicConsumeContext.Body => _body;
+
+        protected override ISendEndpointProvider GetSendEndpointProvider()
+        {
+            return _receiveEndpointContext.CreateSendEndpointProvider(this);
+        }
+
+        protected override IPublishEndpointProvider GetPublishEndpointProvider()
+        {
+            return _receiveEndpointContext.CreatePublishEndpointProvider(this);
+        }
+
+        public override byte[] GetBody()
+        {
+            return _body;
+        }
+
+        public override Stream GetBodyStream()
         {
             return new MemoryStream(_body, false);
         }

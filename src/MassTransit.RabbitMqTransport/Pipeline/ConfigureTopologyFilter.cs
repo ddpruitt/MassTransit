@@ -17,8 +17,8 @@ namespace MassTransit.RabbitMqTransport.Pipeline
     using GreenPipes;
     using Logging;
     using MassTransit.Pipeline;
-    using Topology;
     using Topology.Builders;
+    using Topology.Entities;
 
 
     /// <summary>
@@ -31,17 +31,17 @@ namespace MassTransit.RabbitMqTransport.Pipeline
     {
         readonly ILog _log = Logger.Get<ConfigureTopologyFilter<TSettings>>();
         readonly TSettings _settings;
-        readonly TopologyLayout _topology;
+        readonly BrokerTopology _brokerTopology;
 
-        public ConfigureTopologyFilter(TSettings settings, TopologyLayout topology)
+        public ConfigureTopologyFilter(TSettings settings, BrokerTopology brokerTopology)
         {
             _settings = settings;
-            _topology = topology;
+            _brokerTopology = brokerTopology;
         }
 
         async Task IFilter<ModelContext>.Send(ModelContext context, IPipe<ModelContext> next)
         {
-            await context.OneTimeSetup<ConfigureTopologyContext>(async payload =>
+            await context.OneTimeSetup<ConfigureTopologyContext<TSettings>>(async payload =>
             {
                 await ConfigureTopology(context).ConfigureAwait(false);
 
@@ -55,18 +55,18 @@ namespace MassTransit.RabbitMqTransport.Pipeline
         {
             var scope = context.CreateFilterScope("configureTopology");
 
-            _topology.Probe(scope);
+            _brokerTopology.Probe(scope);
         }
 
         async Task ConfigureTopology(ModelContext context)
         {
-            await Task.WhenAll(_topology.Exchanges.Select(exchange => Declare(context, exchange))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.Exchanges.Select(exchange => Declare(context, exchange))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.ExchangeBindings.Select(binding => Bind(context, binding))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.ExchangeBindings.Select(binding => Bind(context, binding))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.Queues.Select(queue => Declare(context, queue))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.Queues.Select(queue => Declare(context, queue))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.QueueBindings.Select(binding => Bind(context, binding))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.QueueBindings.Select(binding => Bind(context, binding))).ConfigureAwait(false);
         }
 
         Task Declare(ModelContext context, Exchange exchange)
@@ -107,11 +107,6 @@ namespace MassTransit.RabbitMqTransport.Pipeline
             }
 
             return context.QueueBind(binding.Destination.QueueName, binding.Source.ExchangeName, binding.RoutingKey, binding.Arguments);
-        }
-
-
-        public interface ConfigureTopologyContext
-        {
         }
     }
 }

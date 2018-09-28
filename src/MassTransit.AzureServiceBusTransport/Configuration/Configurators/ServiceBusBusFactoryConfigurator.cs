@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,43 +13,45 @@
 namespace MassTransit.AzureServiceBusTransport.Configurators
 {
     using System;
-    using Builders;
     using BusConfigurators;
+    using Configuration;
+    using EndpointSpecifications;
     using MassTransit.Builders;
     using Settings;
-    using Specifications;
-    using Transports;
+    using Topology.Configuration;
+    using Topology.Configuration.Configurators;
 
 
     public class ServiceBusBusFactoryConfigurator :
-        BusFactoryConfigurator<IBusBuilder>,
+        BusFactoryConfigurator,
         IServiceBusBusFactoryConfigurator,
         IBusFactory
     {
-        readonly IServiceBusEndpointConfiguration _configuration;
-        readonly BusHostCollection<ServiceBusHost> _hosts;
+        readonly IServiceBusBusConfiguration _configuration;
+        readonly IServiceBusEndpointConfiguration _busEndpointConfiguration;
+        readonly QueueConfigurator _queueConfigurator;
         readonly ReceiveEndpointSettings _settings;
 
-        public ServiceBusBusFactoryConfigurator(IServiceBusEndpointConfiguration configuration)
-            : base(configuration)
+        public ServiceBusBusFactoryConfigurator(IServiceBusBusConfiguration busConfiguration, IServiceBusEndpointConfiguration busEndpointConfiguration)
+            : base(busConfiguration, busEndpointConfiguration)
         {
-            _configuration = configuration;
-            _hosts = new BusHostCollection<ServiceBusHost>();
+            _configuration = busConfiguration;
+            _busEndpointConfiguration = busEndpointConfiguration;
 
-            var queueName = ((IServiceBusHost)null).GetTemporaryQueueName("bus");
-            _settings = new ReceiveEndpointSettings(Defaults.CreateQueueDescription(queueName))
+            _queueConfigurator = new QueueConfigurator("no-host-configured")
             {
-                QueueDescription =
-                {
-                    EnableExpress = true,
-                    AutoDeleteOnIdle = TimeSpan.FromMinutes(5)
-                }
+                AutoDeleteOnIdle = Defaults.TemporaryAutoDeleteOnIdle,
+                EnableExpress = true
             };
+
+            _settings = new ReceiveEndpointSettings("no-host-configured", _queueConfigurator);
         }
 
         public IBusControl CreateBus()
         {
-            var builder = new ServiceBusBusBuilder(_hosts, _settings, _configuration);
+            var busReceiveEndpointConfiguration = _configuration.CreateReceiveEndpointConfiguration(_settings, _busEndpointConfiguration);
+
+            var builder = new ConfigurationBusBuilder(_configuration, busReceiveEndpointConfiguration, BusObservable);
 
             ApplySpecifications(builder);
 
@@ -58,59 +60,118 @@ namespace MassTransit.AzureServiceBusTransport.Configurators
 
         public TimeSpan DuplicateDetectionHistoryTimeWindow
         {
-            set { _settings.QueueDescription.DuplicateDetectionHistoryTimeWindow = value; }
+            set => _queueConfigurator.DuplicateDetectionHistoryTimeWindow = value;
         }
 
         public bool EnableExpress
         {
-            set { _settings.QueueDescription.EnableExpress = value; }
+            set => _queueConfigurator.EnableExpress = value;
         }
 
         public bool EnablePartitioning
         {
-            set { _settings.QueueDescription.EnablePartitioning = value; }
+            set => _queueConfigurator.EnablePartitioning = value;
         }
 
         public bool IsAnonymousAccessible
         {
-            set { _settings.QueueDescription.IsAnonymousAccessible = value; }
+            set => _queueConfigurator.IsAnonymousAccessible = value;
         }
 
         public int MaxSizeInMegabytes
         {
-            set { _settings.QueueDescription.MaxSizeInMegabytes = value; }
+            set => _queueConfigurator.MaxSizeInMegabytes = value;
         }
 
         public bool RequiresDuplicateDetection
         {
-            set { _settings.QueueDescription.RequiresDuplicateDetection = value; }
+            set => _queueConfigurator.RequiresDuplicateDetection = value;
         }
 
         public bool SupportOrdering
         {
-            set { _settings.QueueDescription.SupportOrdering = value; }
+            set => _queueConfigurator.SupportOrdering = value;
         }
 
         public void ReceiveEndpoint(string queueName, Action<IReceiveEndpointConfigurator> configureEndpoint)
         {
-            if (_hosts.Count == 0)
-                throw new ArgumentException("At least one host must be configured before configuring a receive endpoint");
+            var configuration = _configuration.CreateReceiveEndpointConfiguration(queueName, _configuration.CreateEndpointConfiguration());
 
-            ReceiveEndpoint(_hosts[0], queueName, configureEndpoint);
+            ConfigureReceiveEndpoint(configuration, configureEndpoint);
+        }
+
+        void ConfigureReceiveEndpoint(IServiceBusReceiveEndpointConfiguration configuration, Action<IServiceBusReceiveEndpointConfigurator> configure)
+        {
+            configuration.ConnectConsumerConfigurationObserver(this);
+            configuration.ConnectSagaConfigurationObserver(this);
+            configuration.ConnectHandlerConfigurationObserver(this);
+
+            configure?.Invoke(configuration.Configurator);
+
+            var specification = new ConfigurationReceiveEndpointSpecification(configuration);
+
+            AddReceiveEndpointSpecification(specification);
+        }
+
+        void ConfigureSubscriptionEndpoint(IServiceBusSubscriptionEndpointConfiguration configuration,
+            Action<IServiceBusSubscriptionEndpointConfigurator> configure)
+        {
+            configuration.ConnectConsumerConfigurationObserver(this);
+            configuration.ConnectSagaConfigurationObserver(this);
+            configuration.ConnectHandlerConfigurationObserver(this);
+
+            configure?.Invoke(configuration.Configurator);
+
+            var specification = new ConfigurationReceiveEndpointSpecification(configuration);
+
+            AddReceiveEndpointSpecification(specification);
         }
 
         public void OverrideDefaultBusEndpointQueueName(string value)
         {
-            _settings.QueueDescription.Path = value;
+            _queueConfigurator.Path = value;
         }
+
+        public bool DeployTopologyOnly
+        {
+            set => _configuration.DeployTopologyOnly = value;
+        }
+
+        public void Send<T>(Action<IServiceBusMessageSendTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            IServiceBusMessageSendTopologyConfigurator<T> configurator = _configuration.Topology.Send.GetMessageTopology<T>();
+
+            configureTopology?.Invoke(configurator);
+        }
+
+        public void Publish<T>(Action<IServiceBusMessagePublishTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            IServiceBusMessagePublishTopologyConfigurator<T> configurator = _configuration.Topology.Publish.GetMessageTopology<T>();
+
+            configureTopology?.Invoke(configurator);
+        }
+
+        public new IServiceBusSendTopologyConfigurator SendTopology => _configuration.Topology.Send;
+        public new IServiceBusPublishTopologyConfigurator PublishTopology => _configuration.Topology.Publish;
 
         public IServiceBusHost Host(ServiceBusHostSettings settings)
         {
             if (settings == null)
                 throw new ArgumentNullException(nameof(settings));
 
-            var host = new ServiceBusHost(settings);
-            _hosts.Add(host);
+            var hostTopology = _configuration.CreateHostTopology();
+            var host = new ServiceBusHost(settings, hostTopology, _configuration);
+
+            var hostConfiguration = _configuration.CreateHostConfiguration(host);
+
+            if (_configuration.Hosts.Length == 1)
+            {
+                var path = host.Topology.CreateTemporaryQueueName("bus");
+                _queueConfigurator.Path = path;
+                _settings.Name = path;
+            }
 
             return host;
         }
@@ -127,91 +188,88 @@ namespace MassTransit.AzureServiceBusTransport.Configurators
 
         public int PrefetchCount
         {
-            set { _settings.PrefetchCount = value; }
+            set => _settings.PrefetchCount = value;
         }
 
         public void ReceiveEndpoint(IServiceBusHost host, string queueName, Action<IServiceBusReceiveEndpointConfigurator> configure)
         {
-            var serviceBusHost = host as ServiceBusHost;
-            if (serviceBusHost == null)
-                throw new ArgumentException("Must be a ServiceBusHost", nameof(host));
+            if (!_configuration.TryGetHost(host, out var hostConfiguration))
+                throw new ArgumentException("The host was not configured on this bus", nameof(host));
 
-            var endpointTopologySpecification = _configuration.CreateConfiguration();
+            var configuration = hostConfiguration.CreateReceiveEndpointConfiguration(queueName);
 
-            var specification = new ServiceBusReceiveEndpointSpecification(serviceBusHost, _hosts, queueName, endpointTopologySpecification);
-
-            specification.ConnectConsumerConfigurationObserver(this);
-            specification.ConnectSagaConfigurationObserver(this);
-
-            AddReceiveEndpointSpecification(specification);
-
-            configure?.Invoke(specification);
+            ConfigureReceiveEndpoint(configuration, configure);
         }
 
         public void SubscriptionEndpoint<T>(IServiceBusHost host, string subscriptionName, Action<IServiceBusSubscriptionEndpointConfigurator> configure)
             where T : class
         {
-            SubscriptionEndpoint(host, subscriptionName, host.MessageNameFormatter.GetTopicAddress(host, typeof(T)).AbsolutePath.Trim('/'), configure);
+            if (!_configuration.TryGetHost(host, out var hostConfiguration))
+                throw new ArgumentException("The host was not configured on this bus", nameof(host));
+
+            var settings = new SubscriptionEndpointSettings(_configuration.Topology.Publish.GetMessageTopology<T>().TopicDescription, subscriptionName);
+
+            var configuration = hostConfiguration.CreateSubscriptionEndpointConfiguration(settings);
+
+            ConfigureSubscriptionEndpoint(configuration, configure);
         }
 
-        public void SubscriptionEndpoint(IServiceBusHost host, string subscriptionName, string topicName,
+        public void SubscriptionEndpoint(IServiceBusHost host, string subscriptionName, string topicPath,
             Action<IServiceBusSubscriptionEndpointConfigurator> configure)
         {
-            var endpointTopologySpecification = _configuration.CreateConfiguration();
+            if (!_configuration.TryGetHost(host, out var hostConfiguration))
+                throw new ArgumentException("The host was not configured on this bus", nameof(host));
 
-            var specification = new ServiceBusSubscriptionEndpointSpecification(host, _hosts, subscriptionName, topicName, endpointTopologySpecification);
+            var settings = new SubscriptionEndpointSettings(topicPath, subscriptionName);
 
-            specification.ConnectConsumerConfigurationObserver(this);
-            specification.ConnectSagaConfigurationObserver(this);
+            var configuration = hostConfiguration.CreateSubscriptionEndpointConfiguration(settings);
 
-            AddReceiveEndpointSpecification(specification);
-
-            configure?.Invoke(specification);
+            ConfigureSubscriptionEndpoint(configuration, configure);
         }
 
         public TimeSpan AutoDeleteOnIdle
         {
-            set { _settings.QueueDescription.AutoDeleteOnIdle = value; }
+            set => _queueConfigurator.AutoDeleteOnIdle = value;
         }
 
         public TimeSpan DefaultMessageTimeToLive
         {
-            set { _settings.QueueDescription.DefaultMessageTimeToLive = value; }
+            set => _queueConfigurator.DefaultMessageTimeToLive = value;
         }
 
         public bool EnableBatchedOperations
         {
-            set { _settings.QueueDescription.EnableBatchedOperations = value; }
+            set => _queueConfigurator.EnableBatchedOperations = value;
         }
 
         public bool EnableDeadLetteringOnMessageExpiration
         {
-            set { _settings.QueueDescription.EnableDeadLetteringOnMessageExpiration = value; }
+            set => _queueConfigurator.EnableDeadLetteringOnMessageExpiration = value;
         }
 
         public string ForwardDeadLetteredMessagesTo
         {
-            set { _settings.QueueDescription.ForwardDeadLetteredMessagesTo = value; }
+            set => _queueConfigurator.ForwardDeadLetteredMessagesTo = value;
         }
 
         public TimeSpan LockDuration
         {
-            set { _settings.QueueDescription.LockDuration = value; }
+            set => _queueConfigurator.LockDuration = value;
         }
 
         public int MaxDeliveryCount
         {
-            set { _settings.QueueDescription.MaxDeliveryCount = value; }
+            set => _queueConfigurator.MaxDeliveryCount = value;
         }
 
         public bool RequiresSession
         {
-            set { _settings.QueueDescription.RequiresSession = value; }
+            set => _queueConfigurator.RequiresSession = value;
         }
 
         public string UserMetadata
         {
-            set { _settings.QueueDescription.UserMetadata = value; }
+            set => _queueConfigurator.UserMetadata = value;
         }
 
         public void SelectBasicTier()
@@ -221,13 +279,13 @@ namespace MassTransit.AzureServiceBusTransport.Configurators
 
         public void EnableDuplicateDetection(TimeSpan historyTimeWindow)
         {
-            _settings.QueueDescription.RequiresDuplicateDetection = true;
-            _settings.QueueDescription.DuplicateDetectionHistoryTimeWindow = historyTimeWindow;
+            _queueConfigurator.RequiresDuplicateDetection = true;
+            _queueConfigurator.DuplicateDetectionHistoryTimeWindow = historyTimeWindow;
         }
 
         TimeSpan IServiceBusQueueEndpointConfigurator.MessageWaitTimeout
         {
-            set { _settings.MessageWaitTimeout = value; }
+            set => _settings.MessageWaitTimeout = value;
         }
     }
 }

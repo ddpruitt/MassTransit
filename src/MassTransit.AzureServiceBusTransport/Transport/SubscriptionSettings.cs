@@ -21,5 +21,11 @@ namespace MassTransit.AzureServiceBusTransport.Transport
         TopicDescription TopicDescription { get; }
 
         SubscriptionDescription SubscriptionDescription { get; }
+
+        RuleDescription Rule { get; }
+
+        Filter Filter { get; }
+
+        bool RemoveSubscriptions { get; }
     }
 }

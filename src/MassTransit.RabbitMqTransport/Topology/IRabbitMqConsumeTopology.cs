@@ -12,30 +12,23 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.RabbitMqTransport.Topology
 {
-    using System;
+    using Builders;
     using MassTransit.Topology;
 
 
     public interface IRabbitMqConsumeTopology :
         IConsumeTopology
     {
-        new IRabbitMqMessageConsumeTopologyConfigurator<T> GetMessageTopology<T>()
-            where T : class;
-
         IExchangeTypeSelector ExchangeTypeSelector { get; }
+
+        new IRabbitMqMessageConsumeTopology<T> GetMessageTopology<T>()
+            where T : class;
 
         /// <summary>
         /// Apply the entire topology to the builder
         /// </summary>
         /// <param name="builder"></param>
-        void Apply(IRabbitMqConsumeTopologyBuilder builder);
-
-        /// <summary>
-        /// Bind an exchange, using the configurator
-        /// </summary>
-        /// <param name="exchangeName"></param>
-        /// <param name="configure"></param>
-        void Bind(string exchangeName, Action<IExchangeBindingConfigurator> configure = null);
+        void Apply(IReceiveEndpointBrokerTopologyBuilder builder);
 
         string CreateTemporaryQueueName(string prefix);
     }

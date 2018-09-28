@@ -12,8 +12,10 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.Transports.InMemory.Builders
 {
-    using System;
     using System.Linq;
+    using Configuration;
+    using Context;
+    using Contexts;
     using GreenPipes;
     using MassTransit.Builders;
 
@@ -23,40 +25,38 @@ namespace MassTransit.Transports.InMemory.Builders
         IReceiveEndpointBuilder
     {
         readonly InMemoryHost _host;
-        readonly ISendTransportProvider _sendTransportProvider;
-        readonly IInMemoryEndpointConfiguration _configuration;
+        readonly IInMemoryReceiveEndpointConfiguration _configuration;
 
-        public InMemoryReceiveEndpointBuilder(IBusBuilder busBuilder, InMemoryHost host, ISendTransportProvider sendTransportProvider, IInMemoryEndpointConfiguration configuration)
-            : base(busBuilder, configuration)
+        public InMemoryReceiveEndpointBuilder(InMemoryHost host, IInMemoryReceiveEndpointConfiguration configuration)
+            : base(configuration)
         {
             _host = host;
-            _sendTransportProvider = sendTransportProvider;
             _configuration = configuration;
         }
 
         public override ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
         {
-            _configuration.ConsumeTopology
+            _configuration.Topology.Consume
                 .GetMessageTopology<T>()
                 .Bind();
 
             return base.ConnectConsumePipe(pipe);
         }
 
-        public IInMemoryReceiveEndpointTopology CreateReceiveEndpointTopology(Uri inputAddress)
+        public ReceiveEndpointContext CreateReceiveEndpointContext()
         {
             var builder = _host.CreateConsumeTopologyBuilder();
 
-            var queueName = inputAddress.AbsolutePath.Split('/').Last();
+            var queueName = _configuration.InputAddress.AbsolutePath.Split('/').Last();
 
             builder.Queue = queueName;
             builder.QueueDeclare(queueName);
             builder.Exchange = queueName;
             builder.QueueBind(builder.Exchange, builder.Queue);
 
-            _configuration.ConsumeTopology.Apply(builder);
+            _configuration.Topology.Consume.Apply(builder);
 
-            return new InMemoryReceiveEndpointTopology(_configuration, inputAddress, MessageSerializer, _sendTransportProvider);
+            return new InMemoryReceiveEndpointContext(_configuration, _host, ReceiveObservers, TransportObservers, EndpointObservers);
         }
     }
 }

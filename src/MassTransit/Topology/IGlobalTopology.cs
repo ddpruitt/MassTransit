@@ -14,9 +14,9 @@ namespace MassTransit.Topology
 {
     public interface IGlobalTopology
     {
-        ISendTopology Send { get; }
+        ISendTopologyConfigurator Send { get; }
 
-        IPublishTopology Publish { get; }
+        IPublishTopologyConfigurator Publish { get; }
 
         /// <summary>
         /// This must be called early, methinks

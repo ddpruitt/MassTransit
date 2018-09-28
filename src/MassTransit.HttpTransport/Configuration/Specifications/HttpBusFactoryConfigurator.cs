@@ -14,34 +14,36 @@ namespace MassTransit.HttpTransport.Specifications
 {
     using System;
     using System.Collections.Generic;
-    using Builders;
     using BusConfigurators;
+    using Configuration;
+    using EndpointSpecifications;
     using GreenPipes;
     using Hosting;
     using MassTransit.Builders;
+    using Topology;
     using Transport;
-    using Transports;
-    using Transports.InMemory;
 
 
     public class HttpBusFactoryConfigurator :
-        BusFactoryConfigurator<IBusBuilder>,
+        BusFactoryConfigurator,
         IHttpBusFactoryConfigurator,
         IBusFactory
     {
-        readonly IInMemoryEndpointConfiguration _configuration;
-        readonly BusHostCollection<HttpHost> _hosts;
+        readonly IHttpBusConfiguration _configuration;
+        readonly IHttpEndpointConfiguration _busEndpointConfiguration;
 
-        public HttpBusFactoryConfigurator(IInMemoryEndpointConfiguration configuration)
-            : base(configuration)
+        public HttpBusFactoryConfigurator(IHttpBusConfiguration configuration, IHttpEndpointConfiguration busEndpointConfiguration)
+            : base(configuration, busEndpointConfiguration)
         {
             _configuration = configuration;
-            _hosts = new BusHostCollection<HttpHost>();
+            _busEndpointConfiguration = busEndpointConfiguration;
         }
 
         public IBusControl CreateBus()
         {
-            var builder = new HttpBusBuilder(_hosts, _configuration);
+            var busReceiveEndpointConfiguration = _configuration.CreateReceiveEndpointConfiguration("bus", _busEndpointConfiguration);
+
+            var builder = new ConfigurationBusBuilder(_configuration, busReceiveEndpointConfiguration, BusObservable);
 
             ApplySpecifications(builder);
 
@@ -54,46 +56,54 @@ namespace MassTransit.HttpTransport.Specifications
         {
             foreach (var result in base.Validate())
                 yield return result;
-
-            if (_hosts.Count == 0)
-                yield return this.Failure("Host", "At least one host must be defined");
         }
 
         public IHttpHost Host(HttpHostSettings settings)
         {
-            var httpHost = new HttpHost(settings);
+            var hostTopology = new HttpHostTopology(_busEndpointConfiguration.Topology);
 
-            _hosts.Add(httpHost);
+            var host = new HttpHost(settings, hostTopology);
 
-            return httpHost;
-        }
+            _configuration.CreateHostConfiguration(host);
 
-        public void ReceiveEndpoint(Action<IHttpReceiveEndpointConfigurator> configure = null)
-        {
-            ReceiveEndpoint(_hosts[0], "", configure);
-        }
-
-        public void ReceiveEndpoint(IHttpHost host, string pathMatch, Action<IHttpReceiveEndpointConfigurator> configure = null)
-        {
-            if (host == null)
-                throw new ArgumentNullException(nameof(host));
-
-            var endpointSpecification = _configuration.CreateConfiguration();
-
-            var specification = new HttpReceiveEndpointSpecification(host, _hosts, pathMatch, endpointSpecification);
-
-            specification.ConnectConsumerConfigurationObserver(this);
-            specification.ConnectSagaConfigurationObserver(this);
-
-            configure?.Invoke(specification);
-
-            AddBusFactorySpecification(specification);
+            return host;
         }
 
         public void ReceiveEndpoint(string queueName, Action<IReceiveEndpointConfigurator> configureEndpoint)
         {
-            // TODO: need to come up with a way this makes sense - virtual directory perhaps?
-            throw new NotImplementedException();
+            var configuration = _configuration.CreateReceiveEndpointConfiguration(queueName, _configuration.CreateEndpointConfiguration());
+
+            ConfigureReceiveEndpoint(configuration, configureEndpoint);
+        }
+
+        public void ReceiveEndpoint(IHttpHost host, string queueName, Action<IHttpReceiveEndpointConfigurator> configure)
+        {
+            if (!_configuration.TryGetHost(host, out var hostConfiguration))
+                throw new ArgumentException("The host was not configured on this bus", nameof(host));
+
+            var configuration = hostConfiguration.CreateReceiveEndpointConfiguration(queueName);
+
+            ConfigureReceiveEndpoint(configuration, configure);
+        }
+
+        void ConfigureReceiveEndpoint(IHttpReceiveEndpointConfiguration configuration, Action<IHttpReceiveEndpointConfigurator> configure)
+        {
+            configuration.ConnectConsumerConfigurationObserver(this);
+            configuration.ConnectSagaConfigurationObserver(this);
+            configuration.ConnectHandlerConfigurationObserver(this);
+
+            configure?.Invoke(configuration.Configurator);
+
+            var specification = new ConfigurationReceiveEndpointSpecification(configuration);
+
+            AddReceiveEndpointSpecification(specification);
+        }
+
+        public void ReceiveEndpoint(Action<IHttpReceiveEndpointConfigurator> configure = null)
+        {
+            var configuration = _configuration.CreateReceiveEndpointConfiguration("", _configuration.CreateEndpointConfiguration());
+
+            ConfigureReceiveEndpoint(configuration, configure);
         }
     }
 }

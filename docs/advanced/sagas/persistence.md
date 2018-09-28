@@ -13,6 +13,7 @@ of subsequent events would be meaningless.
     - [NHibernate](#nhibernate)
     - [Redis](#redis)
     - [Marten](#marten)
+    - [DocumentDb](#documentdb)
     - [Azure Service Bus](#azure-service-bus)
 
 ## Specifying saga persistence
@@ -118,7 +119,9 @@ Each of these are setup in a similar way, but examples are shown below for each 
 * [MondoDB](#mongodb)
 * [Redis](#redis)
 * [Marten](#marten)
+* [DocumentDb](#documentdb)
 * [Azure Service Bus](#azure-service-bus)
+* [Dapper](#dapper)
 
 ### Optimistic vs pessimistic concurrency
 
@@ -327,28 +330,37 @@ Redis is a very popular key-value store, which is known for being very fast.
 Redis does not support queries, therefore Redis saga persistence only supports correlation by id. 
 If you try to use correlation by expressions, you will get a "not implemented" exception.
 
-Saga persistence for Redis uses `ServiceStack.Redis` library and it support both BSD-licensed v3.9.71 
-and the latest commercial versions as well.
+Saga persistence for Redis uses `StackExchange.Redis` library.
 
-Saga instance class must implement `IHasGuid` interface and the `Id` property, that must return the 
-value of the `CorrelationId` property:
+
+#### Redis client initialization
+
+Redis saga repository is based on the popular `StackExchange.Redis` package and therefore requires `StackExchange.Redis.IDatabase` factory function as constructor parameter. 
+For containerless initialization the code would look like:
 
 ```csharp
-public class SagaInstance : 
-    SagaStateMachineInstance, IHasGuidId
-{
-    public Guid CorrelationId { get; set; }
-    public Guid Id => CorrelationId;
-    public string CurrentState { get; set; }
+var redisConnectionString = "redis://localhost:6379";
+var redis = ConnectionMultiplexer.Connect(redisConnectionString);
 
-    public string CustomData { get; set; }
-}
+var repository = new RedisSagaRepository<SagaInstance>(() => redis.GetDatabase());
+```
+
+If you use a container, you can use the code like this (example for Autofac):
+
+```csharp
+var redisConnectionString = "redis://localhost:6379";
+builder.RegisterInstance(ConnectionMultiplexer.Connect(redisConnectionString))
+    .As<IConnectionMultiplexer>();
+builder.Register<IDatabase>(c => c.Resolve<IConnectionMultiplexer>.GetDatabase());
+builder.RegisterGeneric(typeof(RedisSagaRepository<>))
+    .As(typeof(ISagaRepository<>)).SingleInstance();
 ```
 
 #### Concurrency
 
-Redis saga persistence does not acquire locking on the database record when writing it so potentially 
-you can have write conflict in case the saga is updating its state frequently (hundreds of times per second). 
+Redis persistence supports optimistic and pessimistic concurrency. The default mode is optomistic concurrency.
+
+In optimistic concurrency mode, Redis saga persistence does not acquire locking on the database record when writing it so potentially you can have write conflict in case the saga is updating its state frequently (hundreds of times per second). 
 To resolve this, the saga instance can implement the `IVersionedSaga` interface and include the Version property:
 
 ```csharp
@@ -358,26 +370,10 @@ public int Version { get; set; }
 When the version of the instance that is being updated is lower than the expected version, 
 the saga repository will trow an exception and force the message to be retried, potentially resolving the issue.
 
-#### Redis client initialization
-
-The Redis saga repository requires `ServiceStack.Redis.IRedisClientsManager` as constructor parameter. 
-For containerless initialization the code would look like:
-
-```csharp
-var redisConnectionString = "redis://localhost:6379";
-var repository = new RedisSagaRepository<SagaInstance>(
-    new RedisManagerPool(redisConnectionString));
-```
-
-If you use a container, you can use the code like this (example for Autofac):
-
-```csharp
-var redisConnectionString = "redis://localhost:6379";
-builder.Register<IRedisClientsManager>(c => 
-    new RedisManagerPool(redisConnectionString)).SingleInstance();
-builder.RegisterGeneric(typeof(RedisSagaRepository<>))
-    .As(typeof(ISagaRepository<>)).SingleInstance();
-```
+Pessimistic concurrency can be used by specifying `optimistic: false` parameter in the repository
+constructor. It will instruct the repository to use Redis lock mechanism. During the message processing,
+saga instance in Redis will be locked and any concurrent attempts to execute any processing on the same
+instance will fail.
 
 ### Marten
 
@@ -401,8 +397,7 @@ public class SampleSaga : ISaga
 }
 ```
 
-Then you need to initialize the document store and the repository. Repository needs the store as its constructor
-parameter.
+Then you need to initialize the document store and the repository. Repository needs the store as its constructor parameter.
 
 ```csharp
 var connectionString =
@@ -453,6 +448,82 @@ public class SampleSaga : ISaga
  });
  ```
 
+### DocumentDb
+
+DocumentDb is the precessor of Azure CosmosDb and the DocumentDb API is still one of the main APIs for the NoSQL document-oriented persistence of CosmosDb. MassTransit supports saga persistence in CosmosDb by using both MongoDb API (using `MassTransit.MongoDb` package) and using DocumentDb API (using `MassTransit.DocumentDb` package).
+
+DocumentDb requires that any document stored there has a property called `id`, to be used as the document identity. Saga instances have `CorrelationId` for the same purpose, so there are two ways to create your DocumentDb saga class, which can have different implications depending on your usage. ETag must also be present, which is used for optimistic concurrency. Please never set this property yourself, it managed 100% by document db.
+
+#### First, the simple (out of box) functionality. Create your saga class:
+
+```csharp
+public class SampleSaga : IVersionedSaga
+{
+    public Guid CorrelationId { get; set; }
+    public string ETag { get; set; }
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, you explicitly pass in the settings
+var repository = new DocumentDbSagaRepository<SampleSaga>(documentDbClient, "sagaDatabase", JsonSerializerSettingsExtensions.GetSagaRenameSettings<SimpleSaga>());
+```
+
+The only restriction with this method is you might run into trouble if you are using Correlation Expressions that use the CorrelationId property. This is because when passing these expressions into DocumentDb's Create Query, it must have the `[JsonProperty("id")]` attribute instead of using the `JsonSerializerSettingsExtensions.GetSagaRenameSettings<...>()` rename.
+
+#### So the second option for your saga class declaration is:
+
+```csharp
+public class SampleSaga : IVersionedSaga
+{
+    [JsonProperty("id")]
+    public Guid CorrelationId { get; set; }
+    [JsonProperty("_etag")]
+    public string ETag { get; set; }
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, just follow the example below, no need to use the GetSagaRenameSettings<>()
+```
+
+And optionally, you can make your Saga inherit from the Azure DocumentDb class `Resource`, because.. well why not? It's saving to that store, so you might as well have all the properties there anyways.
+
+#### Third option for saga class declaration:
+
+```csharp
+public class SampleSaga : IVersionedSaga, Resource
+{
+    [JsonProperty("id")] // This overrides the Resource [JsonProperty("id")], which exists on the Resource classes Id property. This means Id will be a null guid, so just always use CorrelationId instead
+    public Guid CorrelationId { get; set; }
+    // The Resource class has the [JsonProperty("_etag")] public string ETag {get;set;}, so we don't need to declare it here
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, just follow the example below, no need to use the GetSagaRenameSettings<>()
+```
+
+So my preference is option 3, or option 2. Option 1 is there to offer an option as backwards compatibility to existing functionality.
+
+Instantiation of the DocumentDb saga repository could be done like this:
+
+```csharp
+var documentDbClient =  new DocumentClient(endpointUri, authKeyString);
+var repository = new DocumentDbSagaRepository<SampleSaga>(documentDbClient, "sagaDatabase");
+```
+
+If you use a container, you can use the code like this (example for Autofac):
+
+```csharp
+builder.RegisterInstance(new DocumentClient(endpointUri, authKeyString))
+    .As<IDocumentClient>();
+builder.Register(c => 
+        new DocumentDbSagaRepository(c.Resolve<IDocumentClient>(), "sagaDatabase"))
+    .As<ISagaRepository<SampleSaga>>()
+    .SingleInstance();
+```
+
 ### Azure Service Bus
 
 Azure Service Bus provides a feature called *message sessions*, to process multiple messages at once and 
@@ -484,7 +555,52 @@ This means that this type of saga persistence only support correlation by id. So
 saga persistence, you cannot use `CorrelateBy` to specify how to find the saga instance, but only
 `CorrelateById`.
 
+### Dapper
 
+Provides persistence for MSSQL using [Dapper][3].
+
+Dapper.Contrib is used for inserts and updates. The methods are virtual, so if you'd rather write the SQL
+yourself it is supported.
+
+If you do not write your own sql, the model requires you use the `ExplicitKey` attribute for the CorrelationId. And if you have properties
+that are not available as columns, you can use the `Computed` attribute to not include them in the 
+generated SQL.
+
+```csharp
+public class SampleSaga : ISaga
+{
+    [ExplicitKey]
+    public Guid CorrelationId { get; set; }
+    public string Name { get; set; }
+    public string State { get; set; }
+
+    [Computed]
+    public Expression<Func<SimpleSaga, ObservableSagaMessage, bool>> CorrelationExpression
+    {
+        get { return (saga, message) => saga.Name == message.Name; }
+    }
+}
+```
+
+#### Limitations
+The tablename can only be the pluralized form of the class name. So `SampleSaga` would translate to table SampleSaga**s**.
+This applies even if you write your own SQL for updates and inserts.
+
+The expressions you can use for correlation is somewhat limited. These types of expressions are handled:
+```csharp
+    x => x.CorrelationId == someGuid;
+    x => x.IsDone;
+    x => x.CorrelationId == someGuid && x.IsDone;
+```
+You can use multiple `&&` in the expression.
+
+What you can not use is `||` and negations. So a bool used like this `x.IsDone` can only be handled as true and nothing else.
+
+Dapper does not yet support strong naming, though it is being [worked][4] on.
+
+Also this does not support dotnetcore yet.
 
 [1]: https://www.postgresql.org/docs/9.5/static/functions-json.html
 [2]: http://jasperfx.github.io/marten/
+[3]: https://github.com/StackExchange/Dapper
+[4]: https://github.com/StackExchange/Dapper/issues/889

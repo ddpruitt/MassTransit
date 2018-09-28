@@ -2,12 +2,11 @@
   <PropertyGroup>
     <RootNamespace>MassTransit.ExtensionsDependencyInjectionIntegration</RootNamespace>
     <AssemblyName>MassTransit.Extensions.DependencyInjectionIntegration</AssemblyName>
-    <TargetFrameworks>net452;netstandard2.0</TargetFrameworks>
-    <NetStandardImplicitPackageVersion>2.0.0</NetStandardImplicitPackageVersion>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>..\..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
+    <TargetFrameworks>net461;netstandard2.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>portable</DebugType>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <PropertyGroup>
     <PackageId>MassTransit.Extensions.DependencyInjection</PackageId>
@@ -16,8 +15,8 @@
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\MassTransit.Extensions.DependencyInjectionIntegration.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="GreenPipes" Version="1.2.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="1.1.1" />
+    <PackageReference Include="GreenPipes" Version="2.1.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
     <ProjectReference Include="..\..\MassTransit\MassTransit.csproj" />
   </ItemGroup>
 </Project>

@@ -18,6 +18,7 @@ namespace MassTransit.DocumentDbIntegration.Tests.Saga
     using DocumentDbIntegration.Saga.Context;
     using DocumentDbIntegration.Saga.Pipeline;
     using Microsoft.Azure.Documents;
+    using Microsoft.Azure.Documents.Client;
     using Moq;
     using NUnit.Framework;
     using Pipeline;
@@ -36,7 +37,7 @@ namespace MassTransit.DocumentDbIntegration.Tests.Saga
         [Test]
         public void ThenSagaNotInsertedIntoCollection()
         {
-            _mockDocumentClient.Verify(m => m.CreateDocumentAsync(It.IsAny<Uri>(), It.IsAny<SimpleSaga>(), null, false), Times.Never);
+            _mockDocumentClient.Verify(m => m.CreateDocumentAsync(It.IsAny<Uri>(), It.IsAny<SimpleSaga>(), null, false, CancellationToken.None), Times.Never);
         }
 
         Mock<IPipe<SagaConsumeContext<SimpleSaga, InitiateSimpleSaga>>> _nextPipe;
@@ -55,9 +56,9 @@ namespace MassTransit.DocumentDbIntegration.Tests.Saga
             _consumeContextFactory = new Mock<IDocumentDbSagaConsumeContextFactory>();
             _mockDocumentClient = new Mock<IDocumentClient>();
             _context = new Mock<SagaConsumeContext<SimpleSaga, InitiateSimpleSaga>>();
-            _consumeContextFactory.Setup(m => m.Create(_mockDocumentClient.Object, "","", _context.Object, _context.Object.Saga, false)).Returns(_proxy.Object);
+            _consumeContextFactory.Setup(m => m.Create(_mockDocumentClient.Object, "","", _context.Object, It.IsAny<SimpleSaga>(), false, null)).Returns(_proxy.Object);
 
-            _pipe = new MissingPipe<SimpleSaga, InitiateSimpleSaga>(_mockDocumentClient.Object, "","", _nextPipe.Object, _consumeContextFactory.Object);
+            _pipe = new MissingPipe<SimpleSaga, InitiateSimpleSaga>(_mockDocumentClient.Object, "","", _nextPipe.Object, _consumeContextFactory.Object, null);
 
             TaskUtil.Await(() => _pipe.Send(_context.Object));
         }

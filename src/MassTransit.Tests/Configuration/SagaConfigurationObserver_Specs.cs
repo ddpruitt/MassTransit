@@ -17,9 +17,8 @@ namespace MassTransit.Tests.Configuration
     using System.Threading.Tasks;
     using GreenPipes;
     using MassTransit.Saga;
-    using MassTransit.Saga.SubscriptionConfigurators;
     using NUnit.Framework;
-    using TestFramework;
+    using SagaConfigurators;
     using TestFramework.Messages;
     using Util;
 
@@ -51,8 +50,6 @@ namespace MassTransit.Tests.Configuration
                     });
                 });
             });
-
-            Console.WriteLine(bus.GetProbeResult().ToJsonString());
 
             Assert.That(observer.SagaTypes.Contains(typeof(MySaga)));
             Assert.That(observer.MessageTypes.Contains(Tuple.Create(typeof(MySaga), typeof(PingMessage))));

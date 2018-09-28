@@ -22,6 +22,7 @@ namespace MassTransit.ConsumeConfigurators
     /// <typeparam name="TMessage"></typeparam>
     public interface IHandlerConfigurator<TMessage> :
         IConsumeConfigurator,
+        IHandlerConfigurationObserverConnector,
         IPipeConfigurator<ConsumeContext<TMessage>>
         where TMessage : class
     {

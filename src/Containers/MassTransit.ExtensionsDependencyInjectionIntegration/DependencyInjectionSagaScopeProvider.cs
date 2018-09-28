@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,6 +13,7 @@
 namespace MassTransit.ExtensionsDependencyInjectionIntegration
 {
     using System;
+    using System.Collections.Generic;
     using Context;
     using GreenPipes;
     using GreenPipes.Payloads;
@@ -26,19 +27,21 @@ namespace MassTransit.ExtensionsDependencyInjectionIntegration
         ISagaScopeProvider<TSaga>
         where TSaga : class, ISaga
     {
+        readonly IList<Action<ConsumeContext>> _scopeActions;
         readonly IServiceProvider _serviceProvider;
 
         public DependencyInjectionSagaScopeProvider(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
+            _scopeActions = new List<Action<ConsumeContext>>();
         }
 
-        public void Probe(ProbeContext context)
+        void IProbeSite.Probe(ProbeContext context)
         {
             context.Add("provider", "dependencyInjection");
         }
 
-        public ISagaScopeContext<T> GetScope<T>(ConsumeContext<T> context) where T : class
+        ISagaScopeContext<T> ISagaScopeProvider<TSaga>.GetScope<T>(ConsumeContext<T> context)
         {
             if (context.TryGetPayload<IServiceScope>(out var existingServiceScope))
                 return new ExistingSagaScopeContext<T>(context);
@@ -51,6 +54,9 @@ namespace MassTransit.ExtensionsDependencyInjectionIntegration
 
                 var sagaScope = scope;
                 proxy.GetOrAddPayload(() => sagaScope);
+                proxy.GetOrAddPayload(() => sagaScope.ServiceProvider);
+                foreach (Action<ConsumeContext> scopeAction in _scopeActions)
+                    scopeAction(proxy);
 
                 return new CreatedSagaScopeContext<IServiceScope, T>(sagaScope, proxy);
             }
@@ -62,7 +68,7 @@ namespace MassTransit.ExtensionsDependencyInjectionIntegration
             }
         }
 
-        public ISagaQueryScopeContext<TSaga, T> GetQueryScope<T>(SagaQueryConsumeContext<TSaga, T> context) where T : class
+        ISagaQueryScopeContext<TSaga, T> ISagaScopeProvider<TSaga>.GetQueryScope<T>(SagaQueryConsumeContext<TSaga, T> context)
         {
             if (context.TryGetPayload<IServiceScope>(out var existingServiceScope))
                 return new ExistingSagaQueryScopeContext<TSaga, T>(context);
@@ -75,6 +81,9 @@ namespace MassTransit.ExtensionsDependencyInjectionIntegration
 
                 var sagaScope = scope;
                 proxy.GetOrAddPayload(() => sagaScope);
+                proxy.GetOrAddPayload(() => sagaScope.ServiceProvider);
+                foreach (Action<ConsumeContext> scopeAction in _scopeActions)
+                    scopeAction(proxy);
 
                 return new CreatedSagaQueryScopeContext<IServiceScope, TSaga, T>(sagaScope, proxy);
             }
@@ -84,6 +93,11 @@ namespace MassTransit.ExtensionsDependencyInjectionIntegration
 
                 throw;
             }
+        }
+
+        public void AddScopeAction(Action<ConsumeContext> action)
+        {
+            _scopeActions.Add(action);
         }
     }
 }

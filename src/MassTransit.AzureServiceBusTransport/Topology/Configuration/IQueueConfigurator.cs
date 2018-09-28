@@ -10,30 +10,21 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration
 {
-    using System;
-    using Configurators;
+    using GreenPipes;
+    using Microsoft.ServiceBus.Messaging;
 
 
     public interface IQueueConfigurator :
-        IEntityConfigurator
+        IMessageEntityConfigurator,
+        IEndpointEntityConfigurator,
+        ISpecification
     {
-
-        /// <summary>
-        /// Move messages to the dead letter queue on expiration (time to live exceeded)
-        /// </summary>
-        bool? EnableDeadLetteringOnMessageExpiration { set; }
-
         /// <summary>
         /// Move messages to the dead letter queue on filter evaluation exception
         /// </summary>
         bool? EnableDeadLetteringOnFilterEvaluationExceptions { set; }
-
-        /// <summary>
-        /// Sets the path to the recipient to which the dead lettered message is forwarded.
-        /// </summary>
-        string ForwardDeadLetteredMessagesTo { set; }
 
         /// <summary>
         /// Sets the path where messages are forwarded to
@@ -41,18 +32,9 @@ namespace MassTransit.AzureServiceBusTransport.Topology
         string ForwardTo { set; }
 
         /// <summary>
-        /// Specify the lock duration for messages read from the queue
+        /// Create the queueDescription for the configuration
         /// </summary>
-        TimeSpan? LockDuration { set; }
-
-        /// <summary>
-        /// Sets the maximum delivery count. A message is automatically deadlettered after this number of deliveries.
-        /// </summary>
-        int? MaxDeliveryCount { set; }
-
-        /// <summary>
-        /// Sets the subscription in session mode, requiring a session for inbound messages
-        /// </summary>
-        bool? RequiresSession { set; }
+        /// <returns></returns>
+        QueueDescription GetQueueDescription();
     }
 }

@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2015 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,11 +13,18 @@
 namespace MassTransit.RabbitMqTransport
 {
     using System;
+    using System.Threading;
+    using Configuration;
     using Configurators;
+    using MassTransit.Topology;
+    using MassTransit.Topology.EntityNameFormatters;
+    using MassTransit.Topology.Topologies;
 
 
     public static class RabbitMqBusFactory
     {
+        public static IMessageTopologyConfigurator MessageTopology => Cached.MessageTopologyValue.Value;
+
         /// <summary>
         /// Configure and create a bus for RabbitMQ
         /// </summary>
@@ -25,11 +32,30 @@ namespace MassTransit.RabbitMqTransport
         /// <returns></returns>
         public static IBusControl Create(Action<IRabbitMqBusFactoryConfigurator> configure)
         {
-            var configurator = new RabbitMqBusFactoryConfigurator(new Specifications.RabbitMqEndpointConfiguration());
+            var topologyConfiguration = new RabbitMqTopologyConfiguration(MessageTopology);
+            var busConfiguration = new RabbitMqBusConfiguration(topologyConfiguration);
+            var busEndpointConfiguration = busConfiguration.CreateEndpointConfiguration();
+
+            var configurator = new RabbitMqBusFactoryConfigurator(busConfiguration, busEndpointConfiguration);
 
             configure(configurator);
 
             return configurator.Build();
+        }
+
+
+        static class Cached
+        {
+            internal static readonly Lazy<IMessageTopologyConfigurator> MessageTopologyValue =
+                new Lazy<IMessageTopologyConfigurator>(() => new MessageTopology(_entityNameFormatter),
+                    LazyThreadSafetyMode.PublicationOnly);
+
+            static readonly IEntityNameFormatter _entityNameFormatter;
+
+            static Cached()
+            {
+                _entityNameFormatter = new MessageNameFormatterEntityNameFormatter(new RabbitMqMessageNameFormatter());
+            }
         }
     }
 }

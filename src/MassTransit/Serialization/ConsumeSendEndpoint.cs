@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2015 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,7 +15,7 @@ namespace MassTransit.Serialization
     using System;
     using System.Threading;
     using System.Threading.Tasks;
-    using Context;
+    using Context.Converters;
     using GreenPipes;
     using Util;
 
@@ -26,13 +26,18 @@ namespace MassTransit.Serialization
     public class ConsumeSendEndpoint :
         ISendEndpoint
     {
+        public delegate Task ConsumeTaskTracker(Task task);
+
+
         readonly ConsumeContext _context;
         readonly ISendEndpoint _endpoint;
+        readonly ConsumeTaskTracker _tracker;
 
-        public ConsumeSendEndpoint(ISendEndpoint endpoint, ConsumeContext context)
+        public ConsumeSendEndpoint(ISendEndpoint endpoint, ConsumeContext context, ConsumeTaskTracker tracker)
         {
             _endpoint = endpoint;
             _context = context;
+            _tracker = tracker;
         }
 
         public ConnectHandle ConnectSendObserver(ISendObserver observer)
@@ -48,9 +53,7 @@ namespace MassTransit.Serialization
 
             var sendContextPipe = new ConsumeSendContextPipe<T>(_context);
 
-            var task = _endpoint.Send(message, sendContextPipe, cancellationToken);
-            _context.ReceiveContext.AddPendingTask(task);
-            return task;
+            return _tracker(_endpoint.Send(message, sendContextPipe, cancellationToken));
         }
 
         public Task Send<T>(T message, IPipe<SendContext<T>> pipe, CancellationToken cancellationToken)
@@ -58,14 +61,13 @@ namespace MassTransit.Serialization
         {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+
             if (pipe == null)
                 throw new ArgumentNullException(nameof(pipe));
 
             var sendContextPipe = new ConsumeSendContextPipe<T>(_context, pipe);
 
-            var task = _endpoint.Send(message, sendContextPipe, cancellationToken);
-            _context.ReceiveContext.AddPendingTask(task);
-            return task;
+            return _tracker(_endpoint.Send(message, sendContextPipe, cancellationToken));
         }
 
         public Task Send(object message, CancellationToken cancellationToken)
@@ -73,7 +75,7 @@ namespace MassTransit.Serialization
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
 
-            Type messageType = message.GetType();
+            var messageType = message.GetType();
 
             return SendEndpointConverterCache.Send(this, message, messageType, cancellationToken);
         }
@@ -82,6 +84,7 @@ namespace MassTransit.Serialization
         {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+
             if (messageType == null)
                 throw new ArgumentNullException(nameof(messageType));
 
@@ -94,7 +97,7 @@ namespace MassTransit.Serialization
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
 
-            T message = TypeMetadataCache<T>.InitializeFromObject(values);
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
 
             return Send(message, cancellationToken);
         }
@@ -104,24 +107,24 @@ namespace MassTransit.Serialization
         {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+
             if (pipe == null)
                 throw new ArgumentNullException(nameof(pipe));
 
             var sendContextPipe = new ConsumeSendContextPipe<T>(_context, pipe);
 
-            var task = _endpoint.Send(message, sendContextPipe, cancellationToken);
-            _context.ReceiveContext.AddPendingTask(task);
-            return task;
+            return _tracker(_endpoint.Send(message, sendContextPipe, cancellationToken));
         }
 
         public Task Send(object message, IPipe<SendContext> pipe, CancellationToken cancellationToken)
         {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+
             if (pipe == null)
                 throw new ArgumentNullException(nameof(pipe));
 
-            Type messageType = message.GetType();
+            var messageType = message.GetType();
 
             return SendEndpointConverterCache.Send(this, message, messageType, pipe, cancellationToken);
         }
@@ -130,8 +133,10 @@ namespace MassTransit.Serialization
         {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+
             if (messageType == null)
                 throw new ArgumentNullException(nameof(messageType));
+
             if (pipe == null)
                 throw new ArgumentNullException(nameof(pipe));
 
@@ -144,7 +149,7 @@ namespace MassTransit.Serialization
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
 
-            T message = TypeMetadataCache<T>.InitializeFromObject(values);
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
 
             return Send(message, pipe, cancellationToken);
         }
@@ -154,60 +159,13 @@ namespace MassTransit.Serialization
         {
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
+
             if (pipe == null)
                 throw new ArgumentNullException(nameof(pipe));
 
-            T message = TypeMetadataCache<T>.InitializeFromObject(values);
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
 
             return Send(message, pipe, cancellationToken);
-        }
-
-
-        class ConsumeSendContextPipe<T> :
-            IPipe<SendContext<T>>
-            where T : class
-        {
-            readonly ConsumeContext _context;
-            readonly IPipe<SendContext<T>> _pipe;
-            readonly IPipe<SendContext> _sendPipe;
-
-            public ConsumeSendContextPipe(ConsumeContext context)
-            {
-                _context = context;
-            }
-
-            public ConsumeSendContextPipe(ConsumeContext context, IPipe<SendContext<T>> pipe)
-            {
-                _context = context;
-                _pipe = pipe;
-            }
-
-            public ConsumeSendContextPipe(ConsumeContext context, IPipe<SendContext> pipe)
-            {
-                _context = context;
-                _sendPipe = pipe;
-            }
-
-            void IProbeSite.Probe(ProbeContext context)
-            {
-                _pipe?.Probe(context);
-                _sendPipe?.Probe(context);
-            }
-
-            public async Task Send(SendContext<T> sendContext)
-            {
-                sendContext.SourceAddress = _context.ReceiveContext.InputAddress;
-
-                if (_context.ConversationId.HasValue)
-                    sendContext.ConversationId = _context.ConversationId;
-                if (_context.CorrelationId.HasValue)
-                    sendContext.InitiatorId = _context.CorrelationId;
-
-                if (_pipe != null)
-                    await _pipe.Send(sendContext).ConfigureAwait(false);
-                if (_sendPipe != null)
-                    await _sendPipe.Send(sendContext).ConfigureAwait(false);
-            }
         }
     }
 }

@@ -14,11 +14,14 @@ namespace MassTransit.RabbitMqTransport.Tests
 {
     using System.Collections.Generic;
     using System.Linq;
-    using MassTransit.Topology;
+    using System.Threading.Tasks;
+    using MassTransit.Topology.EntityNameFormatters;
     using NUnit.Framework;
     using Topology;
     using Topology.Builders;
+    using Topology.Topologies;
     using TopologyTestTypes;
+
 
     namespace TopologyTestTypes
     {
@@ -41,6 +44,67 @@ namespace MassTransit.RabbitMqTransport.Tests
         public interface ThirdInterface :
             SecondInterface
         {
+        }
+
+
+        public interface AnotherThirdInterface :
+            SecondInterface
+        {
+        }
+    }
+
+
+    [TestFixture]
+    public class Publish_with_complex_hierarchy :
+        RabbitMqTestFixture
+    {
+        [Test]
+        public async Task Should_be_received()
+        {
+            await Bus.Publish<ThirdInterface>(new { });
+            await Bus.Publish<AnotherThirdInterface>(new { });
+
+            var received = await _receivedA;
+        }
+
+        Task<ConsumeContext<FirstInterface>> _receivedA;
+
+        protected override void ConfigureRabbitMqBus(IRabbitMqBusFactoryConfigurator configurator)
+        {
+            configurator.PublishTopology.BrokerTopologyOptions = PublishBrokerTopologyOptions.MaintainHierarchy;
+        }
+
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        {
+            base.ConfigureRabbitMqReceiveEndpoint(configurator);
+
+            _receivedA = Handled<FirstInterface>(configurator);
+        }
+    }
+
+
+    [TestFixture]
+    public class Configuring_a_topology :
+        RabbitMqTestFixture
+    {
+        [Test]
+        public async Task Should_not_consume_the_messages()
+        {
+            await Bus.Publish<ThirdInterface>(new { });
+        }
+
+        protected override void ConfigureRabbitMqBus(IRabbitMqBusFactoryConfigurator configurator)
+        {
+            configurator.DeployTopologyOnly = true;
+
+            configurator.PublishTopology.BrokerTopologyOptions = PublishBrokerTopologyOptions.MaintainHierarchy;
+        }
+
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        {
+            base.ConfigureRabbitMqReceiveEndpoint(configurator);
+
+            Handled<FirstInterface>(configurator);
         }
     }
 
@@ -82,7 +146,8 @@ namespace MassTransit.RabbitMqTransport.Tests
             var singleInterfaceName = _nameFormatter.GetMessageName(typeof(SingleInterface)).ToString();
 
             Assert.That(topology.Exchanges.Any(x => x.ExchangeName == singleInterfaceName), Is.True);
-            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == singleInterfaceName && x.Destination.ExchangeName == _inputQueueName), Is.True);
+            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == singleInterfaceName && x.Destination.ExchangeName == _inputQueueName),
+                Is.True);
         }
 
         [SetUp]
@@ -90,21 +155,22 @@ namespace MassTransit.RabbitMqTransport.Tests
         {
             _nameFormatter = new RabbitMqMessageNameFormatter();
             _entityNameFormatter = new MessageNameFormatterEntityNameFormatter(_nameFormatter);
-            _consumeTopology = new RabbitMqConsumeTopology(_entityNameFormatter);
+            _consumeTopology = new RabbitMqConsumeTopology(RabbitMqBusFactory.MessageTopology, new RabbitMqPublishTopology(RabbitMqBusFactory.MessageTopology));
 
-            _builder = new ReceiveEndpointConsumeTopologyBuilder();
+            _builder = new ReceiveEndpointBrokerTopologyBuilder();
 
             _inputQueueName = "input-queue";
             _builder.Queue = _builder.QueueDeclare(_inputQueueName, true, false, false, new Dictionary<string, object>());
             _builder.Exchange = _builder.ExchangeDeclare(_inputQueueName, _consumeTopology.ExchangeTypeSelector.DefaultExchangeType, true, false,
                 new Dictionary<string, object>());
+
             _builder.QueueBind(_builder.Exchange, _builder.Queue, "", new Dictionary<string, object>());
         }
 
         RabbitMqMessageNameFormatter _nameFormatter;
         MessageNameFormatterEntityNameFormatter _entityNameFormatter;
         IRabbitMqConsumeTopologyConfigurator _consumeTopology;
-        ReceiveEndpointConsumeTopologyBuilder _builder;
+        ReceiveEndpointBrokerTopologyBuilder _builder;
         string _inputQueueName;
     }
 
@@ -116,9 +182,9 @@ namespace MassTransit.RabbitMqTransport.Tests
         public void Should_include_a_binding_for_the_second_interface_only()
         {
             _publishTopology.GetMessageTopology<SecondInterface>()
-                .ApplyMessageTopology(_builder);
+                .Apply(_builder);
 
-            var topology = _builder.BuildTopologyLayout();
+            var topology = _builder.BuildBrokerTopology();
 
             var singleInterfaceName = _nameFormatter.GetMessageName(typeof(FirstInterface)).ToString();
             var interfaceName = _nameFormatter.GetMessageName(typeof(SecondInterface)).ToString();
@@ -135,9 +201,9 @@ namespace MassTransit.RabbitMqTransport.Tests
         public void Should_include_a_binding_for_the_single_interface()
         {
             _publishTopology.GetMessageTopology<SingleInterface>()
-                .ApplyMessageTopology(_builder);
+                .Apply(_builder);
 
-            var topology = _builder.BuildTopologyLayout();
+            var topology = _builder.BuildBrokerTopology();
 
             var singleInterfaceName = _nameFormatter.GetMessageName(typeof(SingleInterface)).ToString();
 
@@ -151,15 +217,15 @@ namespace MassTransit.RabbitMqTransport.Tests
         {
             _nameFormatter = new RabbitMqMessageNameFormatter();
             _entityNameFormatter = new MessageNameFormatterEntityNameFormatter(_nameFormatter);
-            _publishTopology = new RabbitMqPublishTopology(_entityNameFormatter);
+            _publishTopology = new RabbitMqPublishTopology(RabbitMqBusFactory.MessageTopology);
 
-            _builder = new PublishEndpointTopologyBuilder();
+            _builder = new PublishEndpointBrokerTopologyBuilder();
         }
 
         RabbitMqMessageNameFormatter _nameFormatter;
         MessageNameFormatterEntityNameFormatter _entityNameFormatter;
         IRabbitMqPublishTopologyConfigurator _publishTopology;
-        PublishEndpointTopologyBuilder _builder;
+        PublishEndpointBrokerTopologyBuilder _builder;
     }
 
 
@@ -170,9 +236,9 @@ namespace MassTransit.RabbitMqTransport.Tests
         public void Should_include_a_binding_for_the_second_interface_only()
         {
             _publishTopology.GetMessageTopology<SecondInterface>()
-                .ApplyMessageTopology(_builder);
+                .Apply(_builder);
 
-            var topology = _builder.BuildTopologyLayout();
+            var topology = _builder.BuildBrokerTopology();
             topology.LogResult();
 
             var singleInterfaceName = _nameFormatter.GetMessageName(typeof(FirstInterface)).ToString();
@@ -190,9 +256,9 @@ namespace MassTransit.RabbitMqTransport.Tests
         public void Should_include_a_binding_for_the_third_interface_as_well()
         {
             _publishTopology.GetMessageTopology<ThirdInterface>()
-                .ApplyMessageTopology(_builder);
+                .Apply(_builder);
 
-            var topology = _builder.BuildTopologyLayout();
+            var topology = _builder.BuildBrokerTopology();
             topology.LogResult();
 
             var firstInterfaceName = _nameFormatter.GetMessageName(typeof(FirstInterface)).ToString();
@@ -202,8 +268,11 @@ namespace MassTransit.RabbitMqTransport.Tests
             Assert.That(topology.Exchanges.Any(x => x.ExchangeName == secondInterfaceName), Is.True);
             Assert.That(topology.Exchanges.Length, Is.EqualTo(3));
             Assert.That(topology.ExchangeBindings.Length, Is.EqualTo(2));
-            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == secondInterfaceName && x.Destination.ExchangeName == firstInterfaceName), Is.True);
-            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == thirdInterfaceName && x.Destination.ExchangeName == secondInterfaceName), Is.True);
+            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == secondInterfaceName && x.Destination.ExchangeName == firstInterfaceName),
+                Is.True);
+
+            Assert.That(topology.ExchangeBindings.Any(x => x.Source.ExchangeName == thirdInterfaceName && x.Destination.ExchangeName == secondInterfaceName),
+                Is.True);
 
             Assert.That(topology.Exchanges.Any(x => x.ExchangeName == firstInterfaceName), Is.True);
         }
@@ -212,9 +281,9 @@ namespace MassTransit.RabbitMqTransport.Tests
         public void Should_include_a_binding_for_the_single_interface()
         {
             _publishTopology.GetMessageTopology<SingleInterface>()
-                .ApplyMessageTopology(_builder);
+                .Apply(_builder);
 
-            var topology = _builder.BuildTopologyLayout();
+            var topology = _builder.BuildBrokerTopology();
             topology.LogResult();
 
             var singleInterfaceName = _nameFormatter.GetMessageName(typeof(SingleInterface)).ToString();
@@ -229,14 +298,14 @@ namespace MassTransit.RabbitMqTransport.Tests
         {
             _nameFormatter = new RabbitMqMessageNameFormatter();
             _entityNameFormatter = new MessageNameFormatterEntityNameFormatter(_nameFormatter);
-            _publishTopology = new RabbitMqPublishTopology(_entityNameFormatter);
+            _publishTopology = new RabbitMqPublishTopology(RabbitMqBusFactory.MessageTopology);
 
-            _builder = new PublishEndpointTopologyBuilder(PublishEndpointTopologyBuilder.Options.MaintainHierarchy);
+            _builder = new PublishEndpointBrokerTopologyBuilder(PublishBrokerTopologyOptions.MaintainHierarchy);
         }
 
         RabbitMqMessageNameFormatter _nameFormatter;
         MessageNameFormatterEntityNameFormatter _entityNameFormatter;
         IRabbitMqPublishTopologyConfigurator _publishTopology;
-        PublishEndpointTopologyBuilder _builder;
+        PublishEndpointBrokerTopologyBuilder _builder;
     }
 }

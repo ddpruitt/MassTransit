@@ -56,33 +56,14 @@ namespace MassTransit.Pipeline.Filters
             {
                 await next.Send(policyContext.Context).ConfigureAwait(false);
             }
+            catch (OperationCanceledException exception) when (exception.CancellationToken == context.CancellationToken)
+            {
+                throw;
+            }
             catch (Exception exception)
             {
                 if (context.CancellationToken.IsCancellationRequested)
-                {
-                    if (exception is OperationCanceledException canceledException && canceledException.CancellationToken == context.CancellationToken)
-                        throw;
-
                     context.CancellationToken.ThrowIfCancellationRequested();
-                }
-
-                if (context.TryGetPayload(out RetryContext<ConsumeContext<T>> payloadRetryContext))
-                {
-                    await policyContext.RetryFaulted(exception).ConfigureAwait(false);
-
-                    await _observers.RetryFault(payloadRetryContext).ConfigureAwait(false);
-
-                    throw;
-                }
-
-                if (context.TryGetPayload(out RetryContext genericRetryContext))
-                {
-                    await policyContext.RetryFaulted(exception).ConfigureAwait(false);
-
-                    await _observers.RetryFault(genericRetryContext).ConfigureAwait(false);
-
-                    throw;
-                }
 
                 if (!policyContext.CanRetry(exception, out RetryContext<ConsumeContext<T>> retryContext))
                 {
@@ -92,7 +73,7 @@ namespace MassTransit.Pipeline.Filters
 
                     if (_retryPolicy.IsHandled(exception))
                         context.GetOrAddPayload(() => retryContext);
-                    
+
                     throw;
                 }
 
@@ -107,7 +88,7 @@ namespace MassTransit.Pipeline.Filters
 
                         if (_retryPolicy.IsHandled(exception))
                             context.GetOrAddPayload(() => retryContext);
-                        
+
                         throw;
                     }
                 }
@@ -123,7 +104,8 @@ namespace MassTransit.Pipeline.Filters
 
                     await redeliveryContext.ScheduleRedelivery(delay).ConfigureAwait(false);
 
-                    await context.NotifyConsumed(context, context.ReceiveContext.ElapsedTime, TypeMetadataCache<RedeliveryRetryFilter<T>>.ShortName).ConfigureAwait(false);
+                    await context.NotifyConsumed(context, context.ReceiveContext.ElapsedTime, TypeMetadataCache<RedeliveryRetryFilter<T>>.ShortName)
+                        .ConfigureAwait(false);
                 }
                 catch (Exception redeliveryException)
                 {

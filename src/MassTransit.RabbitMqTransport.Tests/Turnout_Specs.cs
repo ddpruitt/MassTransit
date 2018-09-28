@@ -71,7 +71,7 @@ namespace MassTransit.RabbitMqTransport.Tests
             });
         }
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _completed = Handled<JobCompleted>(configurator, context => context.Message.GetArguments<ProcessFile>().Size == 1);
             _completed2 = Handled<JobCompleted>(configurator, context => context.Message.GetArguments<ProcessFile>().Size == 2);
@@ -124,7 +124,7 @@ namespace MassTransit.RabbitMqTransport.Tests
                     {
                         await Task.Delay(TimeSpan.FromSeconds(context.Command.Size), context.CancellationToken).ConfigureAwait(false);
                     }
-                    catch (TaskCanceledException ex)
+                    catch (TaskCanceledException)
                     {
                         Console.WriteLine("Task was canceled!");
                         throw;
@@ -135,7 +135,7 @@ namespace MassTransit.RabbitMqTransport.Tests
             });
         }
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _started = Handled<JobStarted>(configurator);
         }
@@ -201,7 +201,7 @@ namespace MassTransit.RabbitMqTransport.Tests
                     {
                         await Task.Delay(TimeSpan.FromSeconds(context.Command.Size), context.CancellationToken).ConfigureAwait(false);
                     }
-                    catch (TaskCanceledException ex)
+                    catch (TaskCanceledException)
                     {
                         Console.WriteLine("Task was canceled!");
                         throw;
@@ -212,7 +212,7 @@ namespace MassTransit.RabbitMqTransport.Tests
             });
         }
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _started = Handled<JobStarted>(configurator);
             _canceled = Handled<JobCanceled<ProcessFile>>(configurator);

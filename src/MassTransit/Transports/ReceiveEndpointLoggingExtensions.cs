@@ -19,7 +19,12 @@ namespace MassTransit.Transports
 
     public static class ReceiveEndpointLoggingExtensions
     {
-        static readonly ILog _messages = Logger.Get("MassTransit.Messages");
+        static ILog _messages = Logger.Get("MassTransit.Messages");
+
+        public static void SetLog(ILog log)
+        {
+            _messages = log;
+        }
 
         /// <summary>
         /// Log that a message was skipped, and moved to the dead letter queue
@@ -35,12 +40,12 @@ namespace MassTransit.Transports
         /// Log that a message was moved from one endpoint to the destination endpoint address
         /// </summary>
         /// <param name="context"></param>
-        /// <param name="destinationAddress"></param>
+        /// <param name="destination"></param>
         /// <param name="reason"> </param>
-        public static void LogMoved(this ReceiveContext context, Uri destinationAddress, string reason)
+        public static void LogMoved(this ReceiveContext context, string destination, string reason)
         {
             if (_messages.IsInfoEnabled)
-                _messages.Info($"MOVE {context.InputAddress} {GetMessageId(context)} {destinationAddress} {reason}");
+                _messages.Info($"MOVE {context.InputAddress} {GetMessageId(context)} {destination} {reason}");
         }
 
         static string GetMessageId(ReceiveContext context)
@@ -53,7 +58,7 @@ namespace MassTransit.Transports
         {
             if (_messages.IsDebugEnabled)
                 _messages.Debug(
-                    $"RECEIVE {context.ReceiveContext.InputAddress} {GetMessageId(context.ReceiveContext)} {TypeMetadataCache<T>.ShortName} {consumerType}({duration})");
+                    $"RECEIVE {context.ReceiveContext.InputAddress} {context.MessageId} {TypeMetadataCache<T>.ShortName} {consumerType}({duration})");
         }
 
         public static void LogFaulted<T>(this ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
@@ -64,8 +69,18 @@ namespace MassTransit.Transports
                 var faultMessage = GetFaultMessage(exception);
 
                 _messages.Error(
-                    $"R-FAULT {context.ReceiveContext.InputAddress} {GetMessageId(context.ReceiveContext)} {TypeMetadataCache<T>.ShortName} {consumerType}({duration}) {faultMessage}",
+                    $"R-FAULT {context.ReceiveContext.InputAddress} {context.MessageId} {TypeMetadataCache<T>.ShortName} {consumerType}({duration}) {faultMessage}",
                     exception);
+            }
+        }
+
+        public static void LogFaulted(this ReceiveContext context, Exception exception)
+        {
+            if (_messages.IsErrorEnabled)
+            {
+                var faultMessage = GetFaultMessage(exception);
+
+                _messages.Error($"R-FAULT {context.InputAddress} {GetMessageId(context)} {faultMessage}", exception);
             }
         }
 
@@ -75,7 +90,7 @@ namespace MassTransit.Transports
             {
                 var faultMessage = GetFaultMessage(exception);
 
-                _messages.Warn($"R-RETRY {context.ReceiveContext.InputAddress} {GetMessageId(context.ReceiveContext)} {faultMessage}", exception);
+                _messages.Warn($"R-RETRY {context.ReceiveContext.InputAddress} {context.MessageId} {faultMessage}", exception);
             }
         }
 

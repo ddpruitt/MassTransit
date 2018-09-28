@@ -12,10 +12,8 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.Topology
 {
-    using Transports;
-
-
-    public interface IHostTopology
+    public interface IHostTopology :
+        IBusTopology
     {
         /// <summary>
         /// Returns a unique temporary queue name for the host/topology.
@@ -23,7 +21,5 @@ namespace MassTransit.Topology
         /// <param name="prefix">A prefix to distinguish the queue for the purpose</param>
         /// <returns></returns>
         string CreateTemporaryQueueName(string prefix);
-
-        IMessageNameFormatter MessageNameFormatter { get; }
     }
 }

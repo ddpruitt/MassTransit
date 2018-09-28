@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -17,30 +17,26 @@ namespace MassTransit.RabbitMqTransport.Configurators
     using System.Security.Authentication;
     using System.Security.Cryptography.X509Certificates;
     using RabbitMQ.Client;
-    using Topology;
-    using Transports;
     using Util;
 
 
     class ConfigurationHostSettings :
         RabbitMqHostSettings
     {
+        readonly Lazy<Uri> _hostAddress;
+
         public ConfigurationHostSettings()
         {
-            MessageNameFormatter = new RabbitMqMessageNameFormatter();
-
             var defaultOptions = new SslOption();
             SslProtocol = defaultOptions.Version;
-            AcceptablePolicyErrors = defaultOptions.AcceptablePolicyErrors;
+            AcceptablePolicyErrors = defaultOptions.AcceptablePolicyErrors | SslPolicyErrors.RemoteCertificateChainErrors;
 
             PublisherConfirmation = true;
 
             ClientProvidedName = HostMetadataCache.Host.ProcessName;
-
-            _topology = new Lazy<IRabbitMqHostTopology>(() => new RabbitMqTopology(new FanoutExchangeTypeSelector(), MessageNameFormatter, HostAddress));
+            
+            _hostAddress = new Lazy<Uri>(FormatHostAddress);
         }
-
-        readonly Lazy<IRabbitMqHostTopology> _topology;
 
         public string Host { get; set; }
         public int Port { get; set; }
@@ -56,30 +52,28 @@ namespace MassTransit.RabbitMqTransport.Configurators
         public string ClientCertificatePassphrase { get; set; }
         public X509Certificate ClientCertificate { get; set; }
         public bool UseClientCertificateAsAuthenticationIdentity { get; set; }
-        public IMessageNameFormatter MessageNameFormatter { get; set; }
+        public LocalCertificateSelectionCallback CertificateSelectionCallback { get; set; }
+        public RemoteCertificateValidationCallback CertificateValidationCallback { get; set; }
         public string[] ClusterMembers { get; set; }
         public IRabbitMqEndpointResolver HostNameSelector { get; set; }
         public string ClientProvidedName { get; set; }
-        public IRabbitMqHostTopology Topology => _topology.Value;
+        public bool PublisherConfirmation { get; set; }
+        public Uri HostAddress => _hostAddress.Value;
 
-        public Uri HostAddress
+        Uri FormatHostAddress()
         {
-            get
+            var builder = new UriBuilder
             {
-                var builder = new UriBuilder
-                {
-                    Scheme = "rabbitmq",
-                    Host = Host,
-                    Port = Port == 5672 ? 0 : Port,
-                    Path = string.IsNullOrWhiteSpace(VirtualHost) || VirtualHost == "/"
-                        ? "/"
-                        : $"/{VirtualHost.Trim('/')}"
-                };
+                Scheme = "rabbitmq",
+                Host = Host,
+                Port = Port == 5672 ? 0 : Port,
+                Path = string.IsNullOrWhiteSpace(VirtualHost) || VirtualHost == "/"
+                    ? "/"
+                    : $"/{VirtualHost.Trim('/')}"
+            };
 
-                return builder.Uri;
-            }
+            return builder.Uri;
         }
 
-        public bool PublisherConfirmation { get; set; }
     }
 }

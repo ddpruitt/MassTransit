@@ -56,6 +56,21 @@ namespace MassTransit
         }
 
         /// <summary>
+        /// Start a bus, throwing an exception if the bus does not start in the specified timeout
+        /// </summary>
+        /// <param name="bus">The bus handle</param>
+        /// <param name="startTimeout">The wait time before throwing an exception</param>
+        public static void Start(this IBusControl bus, TimeSpan startTimeout)
+        {
+            using (var cancellationTokenSource = new CancellationTokenSource(startTimeout))
+            {
+                var cancellationToken = cancellationTokenSource.Token;
+
+                TaskUtil.Await(() => bus.StartAsync(cancellationToken), cancellationToken);
+            }
+        }
+
+        /// <summary>
         /// Stop a bus, throwing an exception if the bus does not stop in the specified timeout
         /// </summary>
         /// <param name="bus">The bus handle</param>
@@ -66,6 +81,24 @@ namespace MassTransit
             {
                 await bus.StopAsync(cancellationTokenSource.Token).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// This can be used to start and stop the bus when configured in a deploy topology only scenario. No messages should be consumed by it.
+        /// 
+        /// </summary>
+        /// <param name="bus"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public static async Task DeployAsync(IBusControl bus, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (bus == null)
+                throw new ArgumentNullException(nameof(bus));
+
+            await bus.StartAsync(cancellationToken).ConfigureAwait(false);
+
+            await bus.StopAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 }

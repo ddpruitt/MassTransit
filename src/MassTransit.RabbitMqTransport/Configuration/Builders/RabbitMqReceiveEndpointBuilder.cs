@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,40 +12,31 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.RabbitMqTransport.Builders
 {
-    using System;
+    using Configuration;
+    using Contexts;
     using GreenPipes;
     using MassTransit.Builders;
-    using Specifications;
     using Topology;
     using Topology.Builders;
-    using Transport;
-    using Transports;
 
 
     public class RabbitMqReceiveEndpointBuilder :
         ReceiveEndpointBuilder,
-        IRabbitMqReceiveEndpointBuilder
+        IReceiveEndpointBuilder
     {
-        readonly bool _bindMessageExchanges;
-        readonly IRabbitMqHost _host;
-        readonly BusHostCollection<RabbitMqHost> _hosts;
-        readonly IRabbitMqEndpointConfiguration _configuration;
+        readonly IRabbitMqReceiveEndpointConfiguration _configuration;
 
-        public RabbitMqReceiveEndpointBuilder(IBusBuilder busBuilder, IRabbitMqHost host, BusHostCollection<RabbitMqHost> hosts, bool bindMessageExchanges,
-            IRabbitMqEndpointConfiguration configuration)
-            : base(busBuilder, configuration)
+        public RabbitMqReceiveEndpointBuilder(IRabbitMqReceiveEndpointConfiguration configuration)
+            : base(configuration)
         {
-            _bindMessageExchanges = bindMessageExchanges;
             _configuration = configuration;
-            _host = host;
-            _hosts = hosts;
         }
 
         public override ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
         {
-            if (_bindMessageExchanges)
+            if (_configuration.BindMessageExchanges)
             {
-                _configuration.ConsumeTopology
+                _configuration.Topology.Consume
                     .GetMessageTopology<T>()
                     .Bind();
             }
@@ -53,25 +44,27 @@ namespace MassTransit.RabbitMqTransport.Builders
             return base.ConnectConsumePipe(pipe);
         }
 
-        public IRabbitMqReceiveEndpointTopology CreateReceiveEndpointTopology(Uri inputAddress, ReceiveSettings settings)
+        public RabbitMqReceiveEndpointContext CreateReceiveEndpointContext()
         {
-            var topologyLayout = BuildTopology(settings);
+            var brokerTopology = BuildTopology(_configuration.Settings);
 
-            return new RabbitMqReceiveEndpointTopology(_configuration, inputAddress, MessageSerializer, _host, _hosts, topologyLayout);
+            return new RabbitMqQueueReceiveEndpointContext(_configuration, brokerTopology, ReceiveObservers, TransportObservers, EndpointObservers);
         }
 
-        TopologyLayout BuildTopology(ReceiveSettings settings)
+        BrokerTopology BuildTopology(ReceiveSettings settings)
         {
-            var topologyBuilder = new ReceiveEndpointConsumeTopologyBuilder();
+            var topologyBuilder = new ReceiveEndpointBrokerTopologyBuilder();
 
-            topologyBuilder.Queue = topologyBuilder.QueueDeclare(settings.QueueName, settings.Durable, settings.AutoDelete, settings.Exclusive, settings.QueueArguments);
+            topologyBuilder.Queue =
+                topologyBuilder.QueueDeclare(settings.QueueName, settings.Durable, settings.AutoDelete, settings.Exclusive, settings.QueueArguments);
 
-            topologyBuilder.Exchange = topologyBuilder.ExchangeDeclare(settings.ExchangeName ?? settings.QueueName, settings.ExchangeType, settings.Durable, settings.AutoDelete,
+            topologyBuilder.Exchange = topologyBuilder.ExchangeDeclare(settings.ExchangeName ?? settings.QueueName, settings.ExchangeType, settings.Durable,
+                settings.AutoDelete,
                 settings.ExchangeArguments);
 
             topologyBuilder.QueueBind(topologyBuilder.Exchange, topologyBuilder.Queue, settings.RoutingKey, settings.BindingArguments);
 
-            _configuration.ConsumeTopology.Apply(topologyBuilder);
+            _configuration.Topology.Consume.Apply(topologyBuilder);
 
             return topologyBuilder.BuildTopologyLayout();
         }

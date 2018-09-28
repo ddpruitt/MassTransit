@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,18 +13,19 @@
 namespace MassTransit
 {
     using System.ComponentModel;
-    using Configuration;
     using ConsumeConfigurators;
     using GreenPipes;
-    using Saga;
+    using SagaConfigurators;
 
 
     public interface IConsumePipeConfigurator :
         IPipeConfigurator<ConsumeContext>,
         IConsumerConfigurationObserverConnector,
         ISagaConfigurationObserverConnector,
+        IHandlerConfigurationObserverConnector,
         IConsumerConfigurationObserver,
-        ISagaConfigurationObserver
+        ISagaConfigurationObserver,
+        IHandlerConfigurationObserver
     {
         /// <summary>
         /// Adds a type-specific pipe specification to the consume pipe

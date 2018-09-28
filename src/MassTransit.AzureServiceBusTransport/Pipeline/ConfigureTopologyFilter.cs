@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -17,7 +17,6 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
     using System.Threading.Tasks;
     using GreenPipes;
     using Logging;
-    using MassTransit.Pipeline;
     using Topology;
     using Topology.Entities;
 
@@ -26,22 +25,22 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
         IFilter<NamespaceContext>
         where TSettings : class
     {
+        readonly BrokerTopology _brokerTopology;
         readonly ILog _log = Logger.Get<ConfigureTopologyFilter<TSettings>>();
         readonly bool _removeSubscriptions;
 
         readonly TSettings _settings;
-        readonly TopologyLayout _topology;
 
-        public ConfigureTopologyFilter(TSettings settings, TopologyLayout topology, bool removeSubscriptions)
+        public ConfigureTopologyFilter(TSettings settings, BrokerTopology brokerTopology, bool removeSubscriptions)
         {
             _settings = settings;
-            _topology = topology;
+            _brokerTopology = brokerTopology;
             _removeSubscriptions = removeSubscriptions;
         }
 
         public async Task Send(NamespaceContext context, IPipe<NamespaceContext> next)
         {
-            await context.OneTimeSetup<ConfigureTopologyContext>(async payload =>
+            await context.OneTimeSetup<ConfigureTopologyContext<TSettings>>(async payload =>
             {
                 await ConfigureTopology(context).ConfigureAwait(false);
 
@@ -55,7 +54,6 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
             finally
             {
                 if (_removeSubscriptions)
-                {
                     try
                     {
                         await RemoveSubscriptions(context).ConfigureAwait(false);
@@ -65,7 +63,6 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
                         if (_log.IsWarnEnabled)
                             _log.Warn("Failed to remove one or more subsriptions from the endpoint.", ex);
                     }
-                }
             }
         }
 
@@ -73,95 +70,55 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
         {
             var scope = context.CreateFilterScope("configureTopology");
 
-            _topology.Probe(scope);
+            _brokerTopology.Probe(scope);
         }
 
         async Task ConfigureTopology(NamespaceContext context)
         {
-            await Task.WhenAll(_topology.Topics.Select(topic => Create(context, topic))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.Topics.Select(topic => Create(context, topic))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.Queues.Select(queue => Create(context, queue))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.Queues.Select(queue => Create(context, queue))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.Subscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.Subscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.QueueSubscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.QueueSubscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
 
-            await Task.WhenAll(_topology.TopicSubscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.TopicSubscriptions.Select(subscription => Create(context, subscription))).ConfigureAwait(false);
         }
 
         async Task RemoveSubscriptions(NamespaceContext context)
         {
-            await Task.WhenAll(_topology.QueueSubscriptions.Select(subscription => Delete(context, subscription))).ConfigureAwait(false);
+            await Task.WhenAll(_brokerTopology.QueueSubscriptions.Select(subscription => Delete(context, subscription))).ConfigureAwait(false);
         }
 
         Task Create(NamespaceContext context, Topic topic)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Topic ({0})", topic);
-            }
-
             return context.CreateTopic(topic.TopicDescription);
         }
 
         Task Create(NamespaceContext context, Queue queue)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Queue ({0})", queue);
-            }
-
             return context.CreateQueue(queue.QueueDescription);
         }
 
         Task Create(NamespaceContext context, Subscription subscription)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Subscription ({0})", subscription);
-            }
-
-            return context.CreateTopicSubscription(subscription.SubscriptionDescription);
+            return context.CreateTopicSubscription(subscription.SubscriptionDescription, subscription.Rule, subscription.Filter);
         }
 
         Task Create(NamespaceContext context, QueueSubscription subscription)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Queue Subscription ({0})", subscription);
-            }
-
-            // TODO we need to deal with scopes better to make this more realistic
-            var queuePath = $"{context.NamespaceManager.Address.AbsolutePath.TrimStart('/')}{subscription.Destination.QueueDescription.Path}";
-
-            subscription.Subscription.SubscriptionDescription.ForwardTo = queuePath;
-
-            return context.CreateTopicSubscription(subscription.Subscription.SubscriptionDescription);
+            return context.CreateTopicSubscription(subscription.Subscription.SubscriptionDescription, subscription.Subscription.Rule, subscription.Subscription.Filter);
         }
 
         Task Delete(NamespaceContext context, QueueSubscription subscription)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Queue Subscription ({0})", subscription);
-            }
-
             return context.DeleteTopicSubscription(subscription.Subscription.SubscriptionDescription);
         }
 
         Task Create(NamespaceContext context, TopicSubscription subscription)
         {
-            if (_log.IsDebugEnabled)
-            {
-                _log.DebugFormat("Create Topic Subscription ({0})", subscription);
-            }
-
-            return context.CreateTopicSubscription(subscription.Subscription.SubscriptionDescription);
-        }
-
-
-        public interface ConfigureTopologyContext
-        {
+            return context.CreateTopicSubscription(subscription.Subscription.SubscriptionDescription, subscription.Subscription.Rule, subscription.Subscription.Filter);
         }
     }
 }

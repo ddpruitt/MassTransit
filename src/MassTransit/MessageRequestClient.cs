@@ -16,7 +16,6 @@ namespace MassTransit
     using System.Threading;
     using System.Threading.Tasks;
     using GreenPipes;
-    using Pipeline;
 
 
     /// <summary>
@@ -26,12 +25,13 @@ namespace MassTransit
     /// <typeparam name="TRequest">The request message type</typeparam>
     /// <typeparam name="TResponse">The response message type</typeparam>
     public class MessageRequestClient<TRequest, TResponse> :
-        RequestClient<TRequest, TResponse>
+        IRequestClient<TRequest, TResponse>
         where TRequest : class
         where TResponse : class
     {
-        readonly ISendEndpointProvider _sendEndpointProvider;
-        readonly Uri _serviceAddress;
+        readonly TimeSpan? _timeToLive;
+        readonly Action<SendContext<TRequest>> _callback;
+        readonly IRequestClient<TRequest> _client;
 
         /// <summary>
         /// Creates a message request client for the bus and endpoint specified
@@ -41,37 +41,45 @@ namespace MassTransit
         /// <param name="timeout">The request timeout</param>
         /// <param name="timeToLive">The time that the request will live for</param>
         /// <param name="callback"></param>
-        public MessageRequestClient(IBus bus, Uri serviceAddress, TimeSpan timeout, TimeSpan? timeToLive = default(TimeSpan?),
+        public MessageRequestClient(IBus bus, Uri serviceAddress, TimeSpan timeout, TimeSpan? timeToLive = default,
             Action<SendContext<TRequest>> callback = null)
-            : base(bus, bus.Address, timeout, timeToLive, callback)
         {
-            _sendEndpointProvider = bus;
-            _serviceAddress = serviceAddress;
+            _timeToLive = timeToLive;
+            _callback = callback;
+
+            var clientFactory = bus.CreateClientFactory(timeout);
+
+            _client = clientFactory.CreateRequestClient<TRequest>(serviceAddress);
         }
 
         /// <summary>
         /// Creates a message request client for the bus and endpoint specified
         /// </summary>
-        /// <param name="sendEndpointProvider"></param>
-        /// <param name="connector">The bus instance</param>
-        /// <param name="responseAddress">The response address of the connector</param>
-        /// <param name="serviceAddress">The service endpoint address</param>
-        /// <param name="timeout">The request timeout</param>
+        /// <param name="requestClient"></param>
         /// <param name="timeToLive">The time that the request will live for</param>
         /// <param name="callback"></param>
-        public MessageRequestClient(ISendEndpointProvider sendEndpointProvider, IRequestPipeConnector connector, Uri responseAddress, Uri serviceAddress,
-            TimeSpan timeout, TimeSpan? timeToLive = default(TimeSpan?), Action<SendContext<TRequest>> callback = null)
-            : base(connector, responseAddress, timeout, timeToLive, callback)
+        public MessageRequestClient(IRequestClient<TRequest> requestClient, TimeSpan? timeToLive = default,
+            Action<SendContext<TRequest>> callback = null)
         {
-            _sendEndpointProvider = sendEndpointProvider;
-            _serviceAddress = serviceAddress;
+            _callback = callback;
+            _client = requestClient;
+            _timeToLive = timeToLive;
         }
 
-        protected override async Task SendRequest(TRequest request, IPipe<SendContext<TRequest>> requestPipe, CancellationToken cancellationToken)
+        public async Task<TResponse> Request(TRequest request, CancellationToken cancellationToken = default)
         {
-            var endpoint = await _sendEndpointProvider.GetSendEndpoint(_serviceAddress).ConfigureAwait(false);
+            using (var requestHandle = _client.Create(request, cancellationToken))
+            {
+                if (_timeToLive.HasValue)
+                    requestHandle.TimeToLive = _timeToLive.Value;
 
-            await endpoint.Send(request, requestPipe, cancellationToken).ConfigureAwait(false);
+                if (_callback != null)
+                    requestHandle.UseExecute(_callback);
+
+                Response<TResponse> response = await requestHandle.GetResponse<TResponse>().ConfigureAwait(false);
+                
+                return response.Message;
+            }
         }
     }
 }

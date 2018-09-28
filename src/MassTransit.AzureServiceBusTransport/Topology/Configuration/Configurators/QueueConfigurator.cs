@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -10,9 +10,11 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration.Configurators
 {
     using System;
+    using System.Collections.Generic;
+    using GreenPipes;
     using Microsoft.ServiceBus.Messaging;
 
 
@@ -23,6 +25,9 @@ namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
         public QueueConfigurator(string path)
             : base(path)
         {
+            EnableDeadLetteringOnMessageExpiration = true;
+            LockDuration = TimeSpan.FromMinutes(5);
+            MaxDeliveryCount = 5;
         }
 
         public bool? EnableDeadLetteringOnMessageExpiration { get; set; }
@@ -39,9 +44,18 @@ namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
 
         public bool? RequiresSession { get; set; }
 
+        public IEnumerable<ValidationResult> Validate()
+        {
+            if (!ServiceBusEntityNameValidator.Validator.IsValidEntityName(Path))
+                yield return this.Failure("Path", $"must be a valid queue path: {Path}");
+
+            if (AutoDeleteOnIdle.HasValue && AutoDeleteOnIdle != TimeSpan.Zero && AutoDeleteOnIdle < TimeSpan.FromMinutes(5))
+                yield return this.Failure("AutoDeleteOnIdle", "must be zero, or >= 5:00");
+        }
+
         public QueueDescription GetQueueDescription()
         {
-            var description = new QueueDescription(Path);
+            var description = new QueueDescription(FullPath);
 
             if (AutoDeleteOnIdle.HasValue)
                 description.AutoDeleteOnIdle = AutoDeleteOnIdle.Value;

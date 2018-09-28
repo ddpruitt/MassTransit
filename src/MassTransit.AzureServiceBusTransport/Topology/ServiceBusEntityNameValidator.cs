@@ -20,7 +20,7 @@ namespace MassTransit.AzureServiceBusTransport.Topology
     public class ServiceBusEntityNameValidator :
         IEntityNameValidator
     {
-        static readonly Regex _regex = new Regex(@"^[A-Za-z0-9\-_\.:]+$", RegexOptions.Compiled);
+        static readonly Regex _regex = new Regex(@"^[A-Za-z0-9\-_\.:\/]+$", RegexOptions.Compiled);
 
         public void ThrowIfInvalidEntityName(string name)
         {
@@ -30,13 +30,21 @@ namespace MassTransit.AzureServiceBusTransport.Topology
             var success = IsValidEntityName(name);
             if (!success)
             {
-                throw new ArgumentException("The entity name must be a sequence of these characters: letters, digits, hyphen, underscore, period, or colon.");
+                throw new ArgumentException("The entity name must be a sequence of these characters: letters, digits, hyphen, underscore, period, slash, or colon.");
             }
         }
 
         public bool IsValidEntityName(string name)
         {
             return _regex.Match(name).Success;
+        }
+
+        public static IEntityNameValidator Validator => Cached.EntityNameValidator;
+
+
+        static class Cached
+        {
+            internal static readonly IEntityNameValidator EntityNameValidator = new ServiceBusEntityNameValidator();
         }
     }
 }

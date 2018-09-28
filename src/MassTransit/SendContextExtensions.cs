@@ -12,25 +12,73 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit
 {
+    using System;
+    using System.Collections.Generic;
     using Util;
 
 
-    static class SendContextExtensions
+    public static class SendContextExtensions
     {
         /// <summary>
         /// Set the host headers on the SendContext (for error, dead-letter, etc.)
         /// </summary>
-        /// <param name="sendContext"></param>
-        public static void SetHostHeaders(this SendContext sendContext)
+        /// <param name="headers"></param>
+        public static void SetHostHeaders(this SendHeaders headers)
         {
-            sendContext.Headers.Set("MT-Host-MachineName", HostMetadataCache.Host.MachineName);
-            sendContext.Headers.Set("MT-Host-ProcessName", HostMetadataCache.Host.ProcessName);
-            sendContext.Headers.Set("MT-Host-ProcessId", HostMetadataCache.Host.ProcessId.ToString("F0"));
-            sendContext.Headers.Set("MT-Host-Assembly", HostMetadataCache.Host.Assembly);
-            sendContext.Headers.Set("MT-Host-AssemblyVersion", HostMetadataCache.Host.AssemblyVersion);
-            sendContext.Headers.Set("MT-Host-MassTransitVersion", HostMetadataCache.Host.MassTransitVersion);
-            sendContext.Headers.Set("MT-Host-FrameworkVersion", HostMetadataCache.Host.FrameworkVersion);
-            sendContext.Headers.Set("MT-Host-OperatingSystemVersion", HostMetadataCache.Host.OperatingSystemVersion);
+            headers.Set("MT-Host-MachineName", HostMetadataCache.Host.MachineName);
+            headers.Set("MT-Host-ProcessName", HostMetadataCache.Host.ProcessName);
+            headers.Set("MT-Host-ProcessId", HostMetadataCache.Host.ProcessId.ToString("F0"));
+            headers.Set("MT-Host-Assembly", HostMetadataCache.Host.Assembly);
+            headers.Set("MT-Host-AssemblyVersion", HostMetadataCache.Host.AssemblyVersion);
+            headers.Set("MT-Host-MassTransitVersion", HostMetadataCache.Host.MassTransitVersion);
+            headers.Set("MT-Host-FrameworkVersion", HostMetadataCache.Host.FrameworkVersion);
+            headers.Set("MT-Host-OperatingSystemVersion", HostMetadataCache.Host.OperatingSystemVersion);
+        }
+
+        /// <summary>
+        /// Set the host headers on the SendContext (for error, dead-letter, etc.)
+        /// </summary>
+        /// <param name="headers"></param>
+        /// <param name="exception"></param>
+        /// <param name="exceptionTimestamp"></param>
+        public static void SetExceptionHeaders(this SendHeaders headers, Exception exception, DateTime exceptionTimestamp)
+        {
+            exception = exception.GetBaseException() ?? exception;
+
+            var exceptionMessage = ExceptionUtil.GetMessage(exception);
+
+            headers.Set(MessageHeaders.Reason, "fault");
+
+            headers.Set(MessageHeaders.FaultExceptionType, TypeMetadataCache.GetShortName(exception.GetType()));
+            headers.Set(MessageHeaders.FaultMessage, exceptionMessage);
+            headers.Set(MessageHeaders.FaultTimestamp, exceptionTimestamp.ToString("O"));
+            headers.Set(MessageHeaders.FaultStackTrace, ExceptionUtil.GetStackTrace(exception));
+        }
+
+        /// <summary>
+        /// Transfer the header information from the ConsumeContext to the SendContext, including any non-MT headers.
+        /// </summary>
+        /// <param name="sendContext"></param>
+        /// <param name="consumeContext"></param>
+        public static void TransferConsumeContextHeaders(this SendContext sendContext, ConsumeContext consumeContext)
+        {
+            sendContext.GetOrAddPayload(() => consumeContext);
+
+            sendContext.SourceAddress = consumeContext.ReceiveContext.InputAddress;
+
+            if (consumeContext.ConversationId.HasValue)
+                sendContext.ConversationId = consumeContext.ConversationId;
+
+            if (consumeContext.CorrelationId.HasValue)
+                sendContext.InitiatorId = consumeContext.CorrelationId;
+
+            foreach (KeyValuePair<string, object> header in consumeContext.Headers.GetAll())
+            {
+                if (header.Key.StartsWith("MT-"))
+                    continue;
+
+                sendContext.Headers.Set(header.Key, header.Value);
+            }
         }
     }
 }

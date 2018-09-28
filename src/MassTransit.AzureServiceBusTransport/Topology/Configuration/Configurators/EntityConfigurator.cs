@@ -10,7 +10,7 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration.Configurators
 {
     using System;
 
@@ -18,6 +18,11 @@ namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
     public abstract class EntityConfigurator :
         IEntityConfigurator
     {
+        protected EntityConfigurator()
+        {
+            DefaultMessageTimeToLive = Defaults.DefaultMessageTimeToLive;
+        }
+
         public TimeSpan? AutoDeleteOnIdle { get; set; }
 
         public TimeSpan? DefaultMessageTimeToLive { get; set; }

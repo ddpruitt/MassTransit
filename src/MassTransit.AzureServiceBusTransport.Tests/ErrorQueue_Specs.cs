@@ -103,6 +103,8 @@
         {
             configurator.ReceiveEndpoint(host, "input_queue_error", x =>
             {
+                x.SubscribeMessageTopics = false;
+                
                 _errorHandler = Handled<PingMessage>(x);
             });
         }

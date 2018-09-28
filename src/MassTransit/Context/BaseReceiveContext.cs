@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -38,40 +38,50 @@ namespace MassTransit.Context
         readonly Lazy<ContentType> _contentType;
         readonly Lazy<Headers> _headers;
         readonly List<Task> _pendingTasks;
+        readonly Lazy<IPublishEndpointProvider> _publishEndpointProvider;
         readonly IReceiveObserver _receiveObserver;
         readonly Stopwatch _receiveTimer;
+        readonly Lazy<ISendEndpointProvider> _sendEndpointProvider;
+        readonly ReceiveEndpointContext _topology;
 
-        protected BaseReceiveContext(Uri inputAddress, bool redelivered, IReceiveObserver receiveObserver, IReceiveEndpointTopology topology)
-            : this(inputAddress, redelivered, receiveObserver, new CancellationTokenSource(), topology)
+        protected BaseReceiveContext(Uri inputAddress, bool redelivered, IReceiveObserver receiveObserver, ReceiveEndpointContext receiveEndpointContext)
+            : this(inputAddress, redelivered, receiveObserver, new CancellationTokenSource(), receiveEndpointContext)
         {
         }
 
-        protected BaseReceiveContext(Uri inputAddress, bool redelivered, IReceiveObserver receiveObserver, CancellationTokenSource source, IReceiveEndpointTopology topology)
+        protected BaseReceiveContext(Uri inputAddress, bool redelivered, IReceiveObserver receiveObserver, CancellationTokenSource source, ReceiveEndpointContext topology)
             : base(new PayloadCache(), source.Token)
         {
             _receiveTimer = Stopwatch.StartNew();
 
             _cancellationTokenSource = source;
-            Topology = topology;
+            _topology = topology;
+            _receiveObserver = receiveObserver;
+            
             InputAddress = inputAddress;
             Redelivered = redelivered;
-            _receiveObserver = receiveObserver;
 
             _headers = new Lazy<Headers>(() => new JsonHeaders(ObjectTypeDeserializer.Instance, HeaderProvider));
 
             _contentType = new Lazy<ContentType>(GetContentType);
-
             _pendingTasks = new List<Task>(4);
+
+            _sendEndpointProvider = new Lazy<ISendEndpointProvider>(GetSendEndpointProvider);
+            _publishEndpointProvider = new Lazy<IPublishEndpointProvider>(GetPublishEndpointProvider);
         }
 
         protected abstract IHeaderProvider HeaderProvider { get; }
+
+        public void Dispose()
+        {
+            _cancellationTokenSource.Dispose();
+        }
+
         public bool IsDelivered { get; private set; }
         public bool IsFaulted { get; private set; }
-
-        public ISendEndpointProvider SendEndpointProvider => Topology.SendEndpointProvider;
-        public IPublishEndpointProvider PublishEndpointProvider => Topology.PublishEndpointProvider;
-        public ISendTransportProvider SendTransportProvider => Topology.SendTransportProvider;
-        public IReceiveEndpointTopology Topology { get; }
+        public ISendEndpointProvider SendEndpointProvider => _sendEndpointProvider.Value;
+        public IPublishEndpointProvider PublishEndpointProvider => _publishEndpointProvider.Value;
+        public IPublishTopology PublishTopology => _topology.Publish;
 
         public Task CompleteTask
         {
@@ -85,7 +95,6 @@ namespace MassTransit.Context
                         .ToArray();
                 }
 
-
                 var completeTask = Task.WhenAll(tasks);
                 completeTask.ContinueWith(result =>
                 {
@@ -94,13 +103,9 @@ namespace MassTransit.Context
                         for (var i = 0; i < _pendingTasks.Count;)
                         {
                             if (_pendingTasks[i].Status == TaskStatus.RanToCompletion)
-                            {
                                 _pendingTasks.RemoveAt(i);
-                            }
                             else
-                            {
                                 i++;
-                            }
                         }
                     }
                 }, TaskContinuationOptions.OnlyOnRanToCompletion);
@@ -113,13 +118,16 @@ namespace MassTransit.Context
         public void AddPendingTask(Task task)
         {
             lock (_pendingTasks)
+            {
                 _pendingTasks.Add(task);
+            }
         }
 
         public bool Redelivered { get; }
         public Headers TransportHeaders => _headers.Value;
 
-        public virtual Task NotifyConsumed<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType) where T : class
+        public virtual Task NotifyConsumed<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType)
+            where T : class
         {
             IsDelivered = true;
 
@@ -128,7 +136,8 @@ namespace MassTransit.Context
             return _receiveObserver.PostConsume(context, duration, consumerType);
         }
 
-        public virtual Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception) where T : class
+        public virtual Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
+            where T : class
         {
             IsFaulted = true;
 
@@ -141,30 +150,36 @@ namespace MassTransit.Context
         {
             IsFaulted = true;
 
+            this.LogFaulted(exception);
+
             return _receiveObserver.ReceiveFault(this, exception);
         }
 
-        public virtual Stream GetBody()
-        {
-            return GetBodyStream();
-        }
+        public abstract byte[] GetBody();
+        public abstract Stream GetBodyStream();
 
         public TimeSpan ElapsedTime => _receiveTimer.Elapsed;
         public Uri InputAddress { get; }
         public ContentType ContentType => _contentType.Value;
-        protected abstract Stream GetBodyStream();
+
+        protected virtual ISendEndpointProvider GetSendEndpointProvider()
+        {
+            return _topology.SendEndpointProvider;
+        }
+
+        protected virtual IPublishEndpointProvider GetPublishEndpointProvider()
+        {
+            return _topology.PublishEndpointProvider;
+        }
 
         protected virtual ContentType GetContentType()
         {
-            object contentTypeHeader;
-            if (_headers.Value.TryGetHeader("Content-Type", out contentTypeHeader))
+            if (_headers.Value.TryGetHeader("Content-Type", out var contentTypeHeader))
             {
-                var contentType = contentTypeHeader as ContentType;
-                if (contentType != null)
+                if (contentTypeHeader is ContentType contentType)
                     return contentType;
 
-                var contentTypeString = contentTypeHeader as string;
-                if (contentTypeString != null)
+                if (contentTypeHeader is string contentTypeString)
                     return new ContentType(contentTypeString);
             }
 
@@ -174,11 +189,6 @@ namespace MassTransit.Context
         public void Cancel()
         {
             _cancellationTokenSource.Cancel();
-        }
-
-        public void Dispose()
-        {
-            _cancellationTokenSource.Dispose();
         }
     }
 }

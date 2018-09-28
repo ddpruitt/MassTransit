@@ -14,7 +14,7 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
 {
     using System.Threading.Tasks;
     using GreenPipes;
-    using Topology;
+    using Topology.Conventions;
 
 
     public class SetPartitionKeyFilter<T> :
@@ -32,7 +32,7 @@ namespace MassTransit.AzureServiceBusTransport.Pipeline
         {
             var partitionKey = _partitionKeyFormatter.FormatPartitionKey(context);
 
-            if(!string.IsNullOrWhiteSpace(partitionKey))
+            if (!string.IsNullOrWhiteSpace(partitionKey))
                 context.PartitionKey = partitionKey;
 
             return next.Send(context);

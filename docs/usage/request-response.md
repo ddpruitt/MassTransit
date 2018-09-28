@@ -1,5 +1,13 @@
 # Crafting a request/response conversation
+<!-- TOC -->
 
+- [Creating the message contracts](#creating-the-message-contracts)
+- [Handling requests](#handling-requests)
+- [Creating the message request client](#creating-the-message-request-client)
+- [Using the request client in ASP.NET MVC](#using-the-request-client-in-aspnet-mvc)
+- [Composing multiple requests](#composing-multiple-requests)
+
+<!-- /TOC -->
 Request/response is a common pattern in application development, where a component sends a request to a service and
 continues once the response is received. In a distributed system, this can increase the latency of an application
 since the service may be hosted in another process, on another machine, or may even be a remote service in another
@@ -88,7 +96,7 @@ public interface IRequestClient<TRequest, TResponse>
 The interface is simple, a single method that accepts the request and returns a Task that can be awaited. The interface
 declares the request and response types, making it useful for dependency management using dependency injection. In fact,
 by using the request client, an application can be completely free of any MassTransit concerns such as message contexts
-and endpoints. The configuration of the application can defined the endpoints and connections and register them in
+and endpoints. The configuration of the application can define the endpoints and connections and register them in
 a dependency injection container, keeping the configuration complexity at the outer edge of the application.
 
 To create a request client, the provided `MessageRequestClient` can be used.
@@ -109,6 +117,8 @@ var result = await _client.Request<CheckOrderStatus>(new {OrderId = id});
 
 The syntax is significantly cleaner than dealing with message object, consumer contexts, responses,
 etc. And since async/await and messaging are both about asynchronous programming, it's a natural fit.
+
+> **Important:** MassTransit uses a temporary non-durable queue and has a consumer to handle responses. This temporary queue only get configured and created when you _start the bus_. If you forget to start the bus in your application code, the request client will fail with a timeout, waiting for a response.
 
 ## Using the request client in ASP.NET MVC
 

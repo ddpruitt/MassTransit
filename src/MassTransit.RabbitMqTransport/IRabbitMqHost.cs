@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,10 +13,9 @@
 namespace MassTransit.RabbitMqTransport
 {
     using System;
-    using System.Threading.Tasks;
     using GreenPipes;
     using Integration;
-    using Util;
+    using Topology;
 
 
     public interface IRabbitMqHost :
@@ -24,24 +23,18 @@ namespace MassTransit.RabbitMqTransport
     {
         IConnectionCache ConnectionCache { get; }
 
-        RabbitMqHostSettings Settings { get; }
-
-        /// <summary>
-        /// The connection retry policy used for connecting to the host
-        /// </summary>
         IRetryPolicy ConnectionRetryPolicy { get; }
 
-        /// <summary>
-        /// The supervisor for the host, which indicates when it's being stopped
-        /// </summary>
-        ITaskSupervisor Supervisor { get; }
+        RabbitMqHostSettings Settings { get; }
+
+        new IRabbitMqHostTopology Topology { get; }
 
         /// <summary>
         /// Create a temporary receive endpoint on the host, with a separate handle for stopping/removing the endpoint
         /// </summary>
         /// <param name="configure"></param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectReceiveEndpoint(Action<IRabbitMqReceiveEndpointConfigurator> configure = null);
+        HostReceiveEndpointHandle ConnectReceiveEndpoint(Action<IRabbitMqReceiveEndpointConfigurator> configure = null);
 
         /// <summary>
         /// Create a receive endpoint on the host, with a separate handle for stopping/removing the endpoint
@@ -49,6 +42,6 @@ namespace MassTransit.RabbitMqTransport
         /// <param name="queueName"></param>
         /// <param name="configure"></param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectReceiveEndpoint(string queueName, Action<IRabbitMqReceiveEndpointConfigurator> configure = null);
+        HostReceiveEndpointHandle ConnectReceiveEndpoint(string queueName, Action<IRabbitMqReceiveEndpointConfigurator> configure = null);
     }
 }

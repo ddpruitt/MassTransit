@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -14,9 +14,9 @@ namespace MassTransit.AzureServiceBusTransport.Settings
 {
     using System;
     using System.Collections.Generic;
-    using System.Reflection;
-    using GreenPipes.Internals.Reflection;
     using Microsoft.ServiceBus.Messaging;
+    using Topology.Configuration;
+    using Topology.Configuration.Configurators;
     using Transport;
 
 
@@ -24,124 +24,46 @@ namespace MassTransit.AzureServiceBusTransport.Settings
         BaseClientSettings,
         ReceiveSettings
     {
-        static readonly ReadWriteProperty<QueueDescription, TimeSpan?> _autoDeleteOnIdle;
-        static readonly ReadWriteProperty<QueueDescription, bool?> _enableExpress;
+        readonly QueueConfigurator _queueConfigurator;
 
-        static ReceiveEndpointSettings()
+        public ReceiveEndpointSettings(string queueName, QueueConfigurator queueConfigurator)
+            : base(queueConfigurator)
         {
-            var propertyInfo = typeof(QueueDescription).GetProperty("InternalAutoDeleteOnIdle", BindingFlags.Instance | BindingFlags.NonPublic);
-            _autoDeleteOnIdle = new ReadWriteProperty<QueueDescription, TimeSpan?>(propertyInfo);
+            _queueConfigurator = queueConfigurator;
 
-             propertyInfo = typeof(QueueDescription).GetProperty("InternalEnableExpress", BindingFlags.Instance | BindingFlags.NonPublic);
-            _enableExpress = new ReadWriteProperty<QueueDescription, bool?>(propertyInfo);
+            Name = queueName;
         }
 
-        public ReceiveEndpointSettings(QueueDescription description)
+        public IQueueConfigurator QueueConfigurator => _queueConfigurator;
+
+        public bool RemoveSubscriptions { get; set; }
+
+        public override TimeSpan LockDuration => _queueConfigurator.LockDuration ?? Defaults.LockDuration;
+
+        public override string Path => _queueConfigurator.FullPath;
+
+        public override bool RequiresSession => _queueConfigurator.RequiresSession ?? false;
+
+        public QueueDescription GetQueueDescription()
         {
-            QueueDescription = description;
+            return _queueConfigurator.GetQueueDescription();
         }
 
         public override void SelectBasicTier()
         {
-            _autoDeleteOnIdle.Set(QueueDescription, default(TimeSpan?));
-            _enableExpress.Set(QueueDescription, default(bool?));
-
-            QueueDescription.DefaultMessageTimeToLive = TimeSpan.FromDays(14);
+            _queueConfigurator.AutoDeleteOnIdle = default(TimeSpan?);
+            _queueConfigurator.EnableExpress = default(bool?);
+            _queueConfigurator.DefaultMessageTimeToLive = Defaults.BasicMessageTimeToLive;
         }
-
-        public override TimeSpan AutoDeleteOnIdle
-        {
-            get { return QueueDescription.AutoDeleteOnIdle; }
-            set { QueueDescription.AutoDeleteOnIdle = value; }
-        }
-
-        public override TimeSpan DefaultMessageTimeToLive
-        {
-            get { return QueueDescription.DefaultMessageTimeToLive; }
-            set { QueueDescription.DefaultMessageTimeToLive = value; }
-        }
-
-        public TimeSpan DuplicateDetectionHistoryTimeWindow
-        {
-            set { QueueDescription.DuplicateDetectionHistoryTimeWindow = value; }
-        }
-
-        public override bool EnableBatchedOperations
-        {
-            set { QueueDescription.EnableBatchedOperations = value; }
-        }
-
-        public override bool EnableDeadLetteringOnMessageExpiration
-        {
-            set { QueueDescription.EnableDeadLetteringOnMessageExpiration = value; }
-        }
-
-        public bool RequiresDuplicateDetection
-        {
-            set { QueueDescription.RequiresDuplicateDetection = value; }
-        }
-
-        public bool EnablePartitioning
-        {
-            set { QueueDescription.EnablePartitioning = value; }
-        }
-
-        public override string ForwardDeadLetteredMessagesTo
-        {
-            set { QueueDescription.ForwardDeadLetteredMessagesTo = value; }
-        }
-
-        public bool IsAnonymousAccessible
-        {
-            set { QueueDescription.IsAnonymousAccessible = value; }
-        }
-
-        public override int MaxDeliveryCount
-        {
-            get { return QueueDescription.MaxDeliveryCount; }
-            set { QueueDescription.MaxDeliveryCount = value; }
-        }
-
-        public long MaxSizeInMegabytes
-        {
-            set { QueueDescription.MaxSizeInMegabytes = value; }
-        }
-
-        public override bool RequiresSession
-        {
-            get { return QueueDescription.RequiresSession; }
-            set { QueueDescription.RequiresSession = value; }
-        }
-
-        public bool SupportOrdering
-        {
-            set { QueueDescription.SupportOrdering = value; }
-        }
-
-        public override string UserMetadata
-        {
-            set { QueueDescription.UserMetadata = value; }
-        }
-
-        public QueueDescription QueueDescription { get; }
-
-        public bool RemoveSubscriptions { get; set; }
-
-        public override TimeSpan LockDuration
-        {
-            get { return QueueDescription.LockDuration; }
-            set { QueueDescription.LockDuration = value; }
-        }
-
-        public override string Path => QueueDescription.Path;
 
         protected override IEnumerable<string> GetQueryStringOptions()
         {
-            if (QueueDescription.EnableExpress)
+            if (_queueConfigurator.EnableExpress.HasValue && _queueConfigurator.EnableExpress.Value)
                 yield return "express=true";
 
-            if (QueueDescription.AutoDeleteOnIdle > TimeSpan.Zero && QueueDescription.AutoDeleteOnIdle != Defaults.AutoDeleteOnIdle)
-                yield return $"autodelete={QueueDescription.AutoDeleteOnIdle.TotalSeconds}";
+            if (_queueConfigurator.AutoDeleteOnIdle.HasValue && _queueConfigurator.AutoDeleteOnIdle.Value > TimeSpan.Zero
+                && _queueConfigurator.AutoDeleteOnIdle.Value != Defaults.AutoDeleteOnIdle)
+                yield return $"autodelete={_queueConfigurator.AutoDeleteOnIdle.Value.TotalSeconds}";
         }
     }
 }

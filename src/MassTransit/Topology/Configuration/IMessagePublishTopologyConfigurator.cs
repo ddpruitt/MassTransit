@@ -10,9 +10,10 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.Topology.Configuration
+namespace MassTransit.Topology
 {
     using System;
+    using GreenPipes;
 
 
     /// <summary>
@@ -21,6 +22,7 @@ namespace MassTransit.Topology.Configuration
     /// </summary>
     /// <typeparam name="TMessage"></typeparam>
     public interface IMessagePublishTopologyConfigurator<TMessage> :
+        IMessagePublishTopologyConfigurator,
         IImplementedMessagePublishTopologyConfigurator<TMessage>,
         IMessagePublishTopology<TMessage>
         where TMessage : class
@@ -50,24 +52,12 @@ namespace MassTransit.Topology.Configuration
         /// <returns></returns>
         void AddOrUpdateConvention<TConvention>(Func<TConvention> add, Func<TConvention, TConvention> update)
             where TConvention : class, IMessagePublishTopologyConvention<TMessage>;
-
-        /// <summary>
-        /// Sets the entity name formatter used for this message type
-        /// </summary>
-        /// <param name="entityNameFormatter"></param>
-        void SetEntityNameFormatter(IMessageEntityNameFormatter<TMessage> entityNameFormatter);
-
-        /// <summary>
-        /// Sets the entity name for this message type
-        /// </summary>
-        /// <param name="entityName">The entity name</param>
-        void SetEntityName(string entityName);
     }
 
 
-    public interface IMessagePublishTopologyConfigurator
+    public interface IMessagePublishTopologyConfigurator :
+        IMessagePublishTopology,
+        ISpecification
     {
-        IMessagePublishTopologyConfigurator<T> GetMessageTopology<T>()
-            where T : class;
     }
 }

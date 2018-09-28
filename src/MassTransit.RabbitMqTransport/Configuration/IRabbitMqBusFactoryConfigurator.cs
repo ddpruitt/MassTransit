@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -22,12 +22,21 @@ namespace MassTransit.RabbitMqTransport
         IBusFactoryConfigurator,
         IQueueEndpointConfigurator
     {
+        new IRabbitMqSendTopologyConfigurator SendTopology { get; }
+
+        new IRabbitMqPublishTopologyConfigurator PublishTopology { get; }
+
+        /// <summary>
+        /// Set to true if the topology should be deployed only
+        /// </summary>
+        bool DeployTopologyOnly { set; }
+
         /// <summary>
         /// Configure the send topology of the message type
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="configureTopology"></param>
-        void SendTopology<T>(Action<IRabbitMqMessageSendTopologyConfigurator<T>> configureTopology)
+        void Send<T>(Action<IRabbitMqMessageSendTopologyConfigurator<T>> configureTopology)
             where T : class;
 
         /// <summary>
@@ -35,19 +44,8 @@ namespace MassTransit.RabbitMqTransport
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="configureTopology"></param>
-        void PublishTopology<T>(Action<IRabbitMqMessagePublishTopologyConfigurator<T>> configureTopology)
+        void Publish<T>(Action<IRabbitMqMessagePublishTopologyConfigurator<T>> configureTopology)
             where T : class;
-
-        /// <summary>
-        /// Before configuring any topology options, calling this will make it so that send and publish
-        /// topologies are completely separated for this bus. This means that some types may not properly
-        /// follow the topology rules, so use with caution.
-        /// </summary>
-        void SeparatePublishFromSendTopology();
-
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        void AddBusFactorySpecification(IBusFactorySpecification<IBusBuilder> specification);
 
         [EditorBrowsable(EditorBrowsableState.Never)]
         void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<IBusBuilder> specification);
@@ -66,13 +64,6 @@ namespace MassTransit.RabbitMqTransport
         /// <param name="settings"></param>
         /// <returns></returns>
         IRabbitMqHost Host(RabbitMqHostSettings settings);
-
-        /// <summary>
-        /// Create a temporary queue name, using the configured consume topology
-        /// </summary>
-        /// <param name="prefix"></param>
-        /// <returns></returns>
-        string CreateTemporaryQueueName(string prefix);
 
         /// <summary>
         /// Declare a ReceiveEndpoint on the broker and configure the endpoint settings and message consumers.

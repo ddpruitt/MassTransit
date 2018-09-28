@@ -56,10 +56,15 @@ namespace MassTransit.AzureServiceBusTransport.Transport
         /// The path of the message entity
         /// </summary>
         string Path { get; }
+        
+        /// <summary>
+        /// The name of the message entity
+        /// </summary>
+        string Name { get; }
 
         /// <summary>
         /// Get the input address for the client on the specified host
         /// </summary>
-        Uri GetInputAddress(Uri serviceUri);
+        Uri GetInputAddress(Uri serviceUri, string path);
     }
 }

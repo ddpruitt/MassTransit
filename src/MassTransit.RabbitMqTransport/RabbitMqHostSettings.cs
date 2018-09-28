@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -16,8 +16,6 @@ namespace MassTransit.RabbitMqTransport
     using System.Net.Security;
     using System.Security.Authentication;
     using System.Security.Cryptography.X509Certificates;
-    using Topology;
-    using Transports;
 
 
     /// <summary>
@@ -100,12 +98,17 @@ namespace MassTransit.RabbitMqTransport
         bool UseClientCertificateAsAuthenticationIdentity { get; }
 
         /// <summary>
-        /// The message name formatter for the publisher
+        /// An optional client specified SSL certificate selection callback.  If this is not specified,
+        /// the first valid certificate found will be used.
         /// </summary>
-        IMessageNameFormatter MessageNameFormatter { get; }
+        LocalCertificateSelectionCallback CertificateSelectionCallback { get; set; }
 
-
-        IRabbitMqHostTopology Topology { get; }
+        /// <summary>
+        /// An optional client specified SSL certificate validation callback.  If this is not specified,
+        /// the default callback will be used in conjunction with the <see cref="P:RabbitMQ.Client.SslOption.AcceptablePolicyErrors" /> property to
+        /// determine if the remote server certificate is valid.
+        /// </summary>
+        RemoteCertificateValidationCallback CertificateValidationCallback { get; set; }
 
         /// <summary>
         /// When using a RabbitMQ cluster, this contains the host names which make up the cluster. In the event of a connection failure, the next host in the array will be connected to.

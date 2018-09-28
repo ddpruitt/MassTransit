@@ -10,11 +10,23 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.Topology.Configuration
+namespace MassTransit.Topology
 {
+    using GreenPipes;
+
+
     public interface IConsumeTopologyConfigurator :
-        IConsumeTopology
+        IConsumeTopology,
+        ISpecification
     {
+        /// <summary>
+        /// Returns the specification for the message type
+        /// </summary>
+        /// <typeparam name="T">The message type</typeparam>
+        /// <returns></returns>
+        new IMessageConsumeTopologyConfigurator<T> GetMessageTopology<T>()
+            where T : class;
+
         /// <summary>
         /// Adds a convention to the topology, which will be applied to every message type
         /// requested, to determine if a convention for the message type is available.

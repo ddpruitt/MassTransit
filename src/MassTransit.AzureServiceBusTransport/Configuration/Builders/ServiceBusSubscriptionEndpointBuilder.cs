@@ -1,46 +1,53 @@
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+//  
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+// this file except in compliance with the License. You may obtain a copy of the 
+// License at 
+// 
+//     http://www.apache.org/licenses/LICENSE-2.0 
+// 
+// Unless required by applicable law or agreed to in writing, software distributed
+// under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
+// CONDITIONS OF ANY KIND, either express or implied. See the License for the 
+// specific language governing permissions and limitations under the License.
 namespace MassTransit.AzureServiceBusTransport.Builders
 {
-    using System;
+    using Configuration;
+    using Contexts;
     using MassTransit.Builders;
-    using Specifications;
     using Topology;
     using Topology.Builders;
     using Transport;
-    using Transports;
 
 
     public class ServiceBusSubscriptionEndpointBuilder :
         ReceiveEndpointBuilder,
         IReceiveEndpointBuilder
     {
-        readonly IServiceBusHost _host;
-        readonly IServiceBusEndpointConfiguration _configuration;
-        BusHostCollection<ServiceBusHost> _hosts;
+        readonly IServiceBusSubscriptionEndpointConfiguration _configuration;
 
-        public ServiceBusSubscriptionEndpointBuilder(IBusBuilder busBuilder, IServiceBusHost host, BusHostCollection<ServiceBusHost> hosts, IServiceBusEndpointConfiguration configuration)
-            : base(busBuilder, configuration)
+        public ServiceBusSubscriptionEndpointBuilder(IServiceBusSubscriptionEndpointConfiguration configuration)
+            : base(configuration)
         {
             _configuration = configuration;
-            _host = host;
-            _hosts = hosts;
         }
 
-        public IServiceBusReceiveEndpointTopology CreateReceiveEndpointTopology(Uri inputAddress, SubscriptionSettings settings)
+        public ServiceBusReceiveEndpointContext CreateReceiveEndpointContext()
         {
-            var topologyLayout = BuildTopology(settings);
+            var topologyLayout = BuildTopology(_configuration.Settings);
 
-            return new ServiceBusReceiveEndpointTopology(_configuration, inputAddress, MessageSerializer, _host, _hosts, topologyLayout);
+            return new ServiceBusEntityReceiveEndpointContext(_configuration, topologyLayout, ReceiveObservers, TransportObservers, EndpointObservers);
         }
 
-        TopologyLayout BuildTopology(SubscriptionSettings settings)
+        BrokerTopology BuildTopology(SubscriptionSettings settings)
         {
-            var topologyBuilder = new SubscriptionEndpointConsumeTopologyBuilder();
+            var topologyBuilder = new SubscriptionEndpointBrokerTopologyBuilder();
 
             topologyBuilder.Topic = topologyBuilder.CreateTopic(settings.TopicDescription);
 
-            topologyBuilder.CreateSubscription(topologyBuilder.Topic, settings.SubscriptionDescription);
+            topologyBuilder.CreateSubscription(topologyBuilder.Topic, settings.SubscriptionDescription, settings.Rule, settings.Filter);
 
-            return topologyBuilder.BuildTopologyLayout();
+            return topologyBuilder.BuildBrokerTopology();
         }
     }
 }

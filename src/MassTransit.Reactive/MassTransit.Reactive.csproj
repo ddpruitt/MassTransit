@@ -1,13 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net452;netstandard2.0</TargetFrameworks>
-    <NetStandardImplicitPackageVersion>2.0.0</NetStandardImplicitPackageVersion>
+    <DebugType>portable</DebugType>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\..\MassTransit.snk</AssemblyOriginatorKeyFile>
-    <DebugType>portable</DebugType>
   </PropertyGroup>
   <PropertyGroup>
-    <PackageId>MassTransit.Reactive</PackageId><Title>MassTransit.Reactive</Title>
+    <PackageId>MassTransit.Reactive</PackageId>
+    <Title>MassTransit.Reactive</Title>
     <Description>MassTransit Rx extensions support; $(Description)</Description>
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\MassTransit.Reactive.xml</DocumentationFile>
   </PropertyGroup>
@@ -15,9 +15,9 @@
     <DefineConstants>$(DefineConstants);NETCORE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="GreenPipes" Version="1.2.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <PackageReference Include="GreenPipes" Version="2.1.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="System.Reactive.Linq" Version="3.1.1" />
-	  <ProjectReference Include="..\MassTransit\MassTransit.csproj" />
+    <ProjectReference Include="..\MassTransit\MassTransit.csproj" />
   </ItemGroup>
 </Project>

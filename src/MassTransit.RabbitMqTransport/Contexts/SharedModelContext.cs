@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -17,46 +17,61 @@ namespace MassTransit.RabbitMqTransport.Contexts
     using System.Threading;
     using System.Threading.Tasks;
     using GreenPipes;
+    using GreenPipes.Payloads;
     using RabbitMQ.Client;
     using Topology;
-    using Util;
 
 
     public class SharedModelContext :
-        ModelContext,
-        IDisposable
+        ModelContext
     {
         readonly CancellationToken _cancellationToken;
         readonly ModelContext _context;
-        readonly ITaskParticipant _participant;
+        readonly IPayloadCache _payloadCache;
 
-        public SharedModelContext(ModelContext context, CancellationToken cancellationToken, ITaskScope scope)
+        public SharedModelContext(ModelContext context, CancellationToken cancellationToken)
         {
             _context = context;
             _cancellationToken = cancellationToken;
-
-            _participant = scope.CreateParticipant($"{TypeMetadataCache<SharedModelContext>.ShortName} - {context.ConnectionContext.HostSettings.ToDebugString()}");
-            _participant.SetReady();
         }
 
-        void IDisposable.Dispose()
+        public SharedModelContext(ModelContext context, IPayloadCache payloadCache, CancellationToken cancellationToken)
         {
-            _participant.SetComplete();
+            _context = context;
+            _payloadCache = payloadCache;
+            _cancellationToken = cancellationToken;
         }
 
         bool PipeContext.HasPayloadType(Type contextType)
         {
+            if (_payloadCache != null)
+                return _payloadCache.HasPayloadType(contextType);
+
             return _context.HasPayloadType(contextType);
         }
 
         bool PipeContext.TryGetPayload<TPayload>(out TPayload payload)
         {
+            if (_payloadCache != null)
+                return _payloadCache.TryGetPayload(out payload);
+
             return _context.TryGetPayload(out payload);
         }
 
         TPayload PipeContext.GetOrAddPayload<TPayload>(PayloadFactory<TPayload> payloadFactory)
         {
+            if (_payloadCache != null)
+                return _payloadCache.GetOrAddPayload(payloadFactory);
+
             return _context.GetOrAddPayload(payloadFactory);
+        }
+
+        T PipeContext.AddOrUpdatePayload<T>(PayloadFactory<T> addFactory, UpdatePayloadFactory<T> updateFactory)
+        {
+            if (_payloadCache != null)
+                return _payloadCache.AddOrUpdatePayload(addFactory, updateFactory);
+
+            return _context.AddOrUpdatePayload(addFactory, updateFactory);
         }
 
         ConnectionContext ModelContext.ConnectionContext => _context.ConnectionContext;
@@ -118,9 +133,9 @@ namespace MassTransit.RabbitMqTransport.Contexts
             _context.BasicNack(deliveryTag, multiple, requeue);
         }
 
-        Task<string> ModelContext.BasicConsume(string queue, bool noAck, IBasicConsumer consumer)
+        Task<string> ModelContext.BasicConsume(string queue, bool noAck, bool exclusive, IDictionary<string, object> arguments, IBasicConsumer consumer)
         {
-            return _context.BasicConsume(queue, noAck, consumer);
+            return _context.BasicConsume(queue, noAck, exclusive, arguments, consumer);
         }
 
         public Task BasicCancel(string consumerTag)

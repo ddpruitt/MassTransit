@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,41 +15,43 @@ namespace MassTransit.RabbitMqTransport.Transport
     using System;
     using System.Threading;
     using System.Threading.Tasks;
+    using Contexts;
     using Events;
     using GreenPipes;
-    using GreenPipes.Internals.Extensions;
+    using GreenPipes.Agents;
     using Logging;
     using MassTransit.Pipeline.Observables;
-    using MassTransit.Pipeline.Pipes;
     using Policies;
+    using RabbitMQ.Client.Exceptions;
     using Topology;
     using Transports;
-    using Util;
 
 
     public class RabbitMqReceiveTransport :
+        Supervisor,
         IReceiveTransport
     {
         static readonly ILog _log = Logger.Get<RabbitMqReceiveTransport>();
+        readonly IPipe<ConnectionContext> _connectionPipe;
         readonly IRabbitMqHost _host;
         readonly Uri _inputAddress;
-        readonly IManagementPipe _managementPipe;
         readonly ReceiveObservable _receiveObservable;
         readonly ReceiveTransportObservable _receiveTransportObservable;
         readonly ReceiveSettings _settings;
-        readonly IRabbitMqReceiveEndpointTopology _topology;
+        readonly RabbitMqReceiveEndpointContext _receiveEndpointContext;
 
-        public RabbitMqReceiveTransport(IRabbitMqHost host, ReceiveSettings settings, IManagementPipe managementPipe, IRabbitMqReceiveEndpointTopology topology)
+        public RabbitMqReceiveTransport(IRabbitMqHost host, ReceiveSettings settings, IPipe<ConnectionContext> connectionPipe,
+            RabbitMqReceiveEndpointContext receiveEndpointContext, ReceiveObservable receiveObservable, ReceiveTransportObservable receiveTransportObservable)
         {
             _host = host;
             _settings = settings;
-            _topology = topology;
-            _managementPipe = managementPipe;
+            _receiveEndpointContext = receiveEndpointContext;
+            _connectionPipe = connectionPipe;
 
-            _receiveObservable = new ReceiveObservable();
-            _receiveTransportObservable = new ReceiveTransportObservable();
+            _receiveObservable = receiveObservable;
+            _receiveTransportObservable = receiveTransportObservable;
 
-            _inputAddress = topology.InputAddress;
+            _inputAddress = receiveEndpointContext.InputAddress;
         }
 
         void IProbeSite.Probe(ProbeContext context)
@@ -58,27 +60,19 @@ namespace MassTransit.RabbitMqTransport.Transport
             scope.Add("type", "RabbitMQ");
             scope.Set(_settings);
             var topologyScope = scope.CreateScope("topology");
-            _topology.TopologyLayout.Probe(topologyScope);
+            _receiveEndpointContext.BrokerTopology.Probe(topologyScope);
         }
 
         /// <summary>
         /// Start the receive transport, returning a Task that can be awaited to signal the transport has 
         /// completely shutdown once the cancellation token is cancelled.
         /// </summary>
-        /// <param name="receivePipe"></param>
         /// <returns>A task that is completed once the transport is shut down</returns>
-        public ReceiveTransportHandle Start(IPipe<ReceiveContext> receivePipe)
+        public ReceiveTransportHandle Start()
         {
-            var supervisor = new TaskSupervisor($"{TypeCache<RabbitMqReceiveTransport>.ShortName} - {_inputAddress}");
+            Task.Factory.StartNew(Receiver, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
 
-            IPipe<ConnectionContext> pipe = Pipe.New<ConnectionContext>(x =>
-            {
-                x.RabbitMqConsumer(receivePipe, _settings, _receiveObservable, _receiveTransportObservable, supervisor, _managementPipe, _host, _topology);
-            });
-
-            Task.Factory.StartNew(() => Receiver(pipe, supervisor), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
-
-            return new Handle(supervisor);
+            return new Handle(this);
         }
 
         public ConnectHandle ConnectReceiveObserver(IReceiveObserver observer)
@@ -93,67 +87,92 @@ namespace MassTransit.RabbitMqTransport.Transport
 
         public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
         {
-            return _topology.PublishEndpointProvider.ConnectPublishObserver(observer);
+            return _receiveEndpointContext.ConnectPublishObserver(observer);
         }
 
         public ConnectHandle ConnectSendObserver(ISendObserver observer)
         {
-            return _topology.SendEndpointProvider.ConnectSendObserver(observer);
+            return _receiveEndpointContext.ConnectSendObserver(observer);
         }
 
-        async Task Receiver(IPipe<ConnectionContext> transportPipe, TaskSupervisor supervisor)
+        async Task Receiver()
         {
-            try
+            while (!IsStopping)
             {
-                await _host.ConnectionRetryPolicy.RetryUntilCancelled(async () =>
+                try
                 {
-                    try
+                    await _host.ConnectionRetryPolicy.Retry(async () =>
                     {
-                        await _host.ConnectionCache.Send(transportPipe, supervisor.StoppingToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (RabbitMqConnectionException ex)
-                    {
-                        if (_log.IsErrorEnabled)
-                            _log.ErrorFormat("RabbitMQ connection failed: {0}", ex.Message);
+                        if (IsStopping)
+                            return;
 
-                        await _receiveTransportObservable.Faulted(new ReceiveTransportFaultedEvent(_inputAddress, ex)).ConfigureAwait(false);
-
-                        throw;
-                    }
-                    catch (TaskCanceledException)
-                    {
-                    }
-                    catch (Exception ex)
-                    {
-                        if (_log.IsErrorEnabled)
-                            _log.ErrorFormat("RabbitMQ receive transport failed: {0}", ex.Message);
-
-                        await _receiveTransportObservable.Faulted(new ReceiveTransportFaultedEvent(_inputAddress, ex)).ConfigureAwait(false);
-
-                        throw;
-                    }
-                }, supervisor.StoppingToken).ConfigureAwait(false);
+                        try
+                        {
+                            await _host.ConnectionCache.Send(_connectionPipe, Stopped).ConfigureAwait(false);
+                        }
+                        catch (RabbitMqConnectionException ex)
+                        {
+                            await NotifyFaulted(ex).ConfigureAwait(false);
+                            throw;
+                        }
+                        catch (BrokerUnreachableException ex)
+                        {
+                            throw await ConvertToRabbitMqConnectionException(ex, "RabbitMQ Unreachable").ConfigureAwait(false);
+                        }
+                        catch (OperationInterruptedException ex)
+                        {
+                            throw await ConvertToRabbitMqConnectionException(ex, "Operation interrupted").ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                            throw await ConvertToRabbitMqConnectionException(ex, "ReceiveTranport Faulted, Restarting").ConfigureAwait(false);
+                        }
+                    }, Stopping);
+                }
+                catch
+                {
+                    // nothing to see here
+                }
             }
-            catch (TaskCanceledException)
-            {
-            }
+        }
+
+        async Task<RabbitMqConnectionException> ConvertToRabbitMqConnectionException(Exception ex, string message)
+        {
+            if (_log.IsDebugEnabled)
+                _log.Debug(message, ex);
+
+            var exception = new RabbitMqConnectionException(message + _host.ConnectionCache, ex);
+
+            await NotifyFaulted(exception);
+
+            return exception;
+        }
+
+        Task NotifyFaulted(RabbitMqConnectionException exception)
+        {
+            if (_log.IsErrorEnabled)
+                _log.ErrorFormat("RabbitMQ Connect Failed: {0}", exception.Message);
+
+            return _receiveTransportObservable.Faulted(new ReceiveTransportFaultedEvent(_inputAddress, exception));
         }
 
 
         class Handle :
             ReceiveTransportHandle
         {
-            readonly TaskSupervisor _supervisor;
+            readonly IAgent _agent;
 
-            public Handle(TaskSupervisor supervisor)
+            public Handle(IAgent agent)
             {
-                _supervisor = supervisor;
+                _agent = agent;
             }
 
             Task ReceiveTransportHandle.Stop(CancellationToken cancellationToken)
             {
-                return _supervisor.Stop("Stop Receive Transport", cancellationToken);
+                return _agent.Stop("Stop Receive Transport", cancellationToken);
             }
         }
     }

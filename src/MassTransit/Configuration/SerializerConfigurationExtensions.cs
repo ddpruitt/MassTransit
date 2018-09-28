@@ -13,7 +13,6 @@
 namespace MassTransit
 {
     using System;
-    using EndpointSpecifications;
     using Newtonsoft.Json;
     using Serialization;
 
@@ -26,7 +25,7 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseJsonSerializer(this IBusFactoryConfigurator configurator)
         {
-            configurator.AddBusFactorySpecification(new SetMessageSerializerBusFactorySpecification<JsonMessageSerializer>());
+            configurator.SetMessageSerializer(() => new JsonMessageSerializer());
         }
 
         /// <summary>
@@ -35,7 +34,7 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseJsonSerializer(this IReceiveEndpointConfigurator configurator)
         {
-            configurator.AddEndpointSpecification(new SetMessageSerializerReceiveEndpointSpecification<JsonMessageSerializer>());
+            configurator.SetMessageSerializer(() => new JsonMessageSerializer());
         }
 
         /// <summary>
@@ -66,7 +65,7 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseBsonSerializer(this IBusFactoryConfigurator configurator)
         {
-            configurator.AddBusFactorySpecification(new SetMessageSerializerBusFactorySpecification<BsonMessageSerializer>());
+            configurator.SetMessageSerializer(() => new BsonMessageSerializer());
         }
 
         /// <summary>
@@ -75,17 +74,99 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseBsonSerializer(this IReceiveEndpointConfigurator configurator)
         {
-            configurator.AddEndpointSpecification(new SetMessageSerializerReceiveEndpointSpecification<BsonMessageSerializer>());
+            configurator.SetMessageSerializer(() => new BsonMessageSerializer());
         }
 
         public static void UseEncryptedSerializer(this IBusFactoryConfigurator configurator, ICryptoStreamProvider streamProvider)
         {
-            configurator.AddBusFactorySpecification(new EncryptedMessageSerializerBusFactorySpecification(streamProvider));
+            configurator.SetMessageSerializer(() => new EncryptedMessageSerializer(streamProvider));
+
+            configurator.AddMessageDeserializer(EncryptedMessageSerializer.EncryptedContentType,
+                () => new EncryptedMessageDeserializer(BsonMessageSerializer.Deserializer, streamProvider));
         }
 
         public static void UseEncryptedSerializer(this IReceiveEndpointConfigurator configurator, ICryptoStreamProvider streamProvider)
         {
-            configurator.AddEndpointSpecification(new EncryptedMessageSerializerReceiveEndpointSpecification(streamProvider));
+            configurator.SetMessageSerializer(() => new EncryptedMessageSerializer(streamProvider));
+
+            configurator.AddMessageDeserializer(EncryptedMessageSerializer.EncryptedContentType,
+                () => new EncryptedMessageDeserializer(BsonMessageSerializer.Deserializer, streamProvider));
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="symmetricKey">Cryptographic key for both encryption of plaintext message and decryption of ciphertext message</param>
+        public static void UseEncryption(this IBusFactoryConfigurator configurator, byte[] symmetricKey)
+        {
+            var keyProvider = new ConstantSecureKeyProvider(symmetricKey);
+            var streamProvider = new AesCryptoStreamProviderV2(keyProvider);
+
+            configurator.UseEncryptedSerializerV2(streamProvider);
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="symmetricKey">Cryptographic key for both encryption of plaintext message and decryption of ciphertext message</param>
+        public static void UseEncryption(this IReceiveEndpointConfigurator configurator, byte[] symmetricKey)
+        {
+            var keyProvider = new ConstantSecureKeyProvider(symmetricKey);
+            var streamProvider = new AesCryptoStreamProviderV2(keyProvider);
+
+            configurator.UseEncryptedSerializerV2(streamProvider);
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="keyProvider">The custom key provider to provide the symmetric key for encryption of plaintext message and decryption of ciphertext message</param>
+        public static void UseEncryption(this IBusFactoryConfigurator configurator, ISecureKeyProvider keyProvider)
+        {
+            var streamProvider = new AesCryptoStreamProviderV2(keyProvider);
+
+            configurator.UseEncryptedSerializerV2(streamProvider);
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="keyProvider">The custom key provider to provide the symmetric key for encryption of plaintext message and decryption of ciphertext message</param>
+        public static void UseEncryption(this IReceiveEndpointConfigurator configurator, ISecureKeyProvider keyProvider)
+        {
+            var streamProvider = new AesCryptoStreamProviderV2(keyProvider);
+
+            configurator.UseEncryptedSerializerV2(streamProvider);
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="streamProvider"></param>
+        public static void UseEncryptedSerializerV2(this IBusFactoryConfigurator configurator, ICryptoStreamProviderV2 streamProvider)
+        {
+            configurator.SetMessageSerializer(() => new EncryptedMessageSerializerV2(streamProvider));
+
+            configurator.AddMessageDeserializer(EncryptedMessageSerializerV2.EncryptedContentType,
+                () => new EncryptedMessageDeserializerV2(BsonMessageSerializer.Deserializer, streamProvider));
+        }
+
+        /// <summary>
+        /// Serialize messages using the BSON message serializer with AES Encryption
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="streamProvider"></param>
+        public static void UseEncryptedSerializerV2(this IReceiveEndpointConfigurator configurator, ICryptoStreamProviderV2 streamProvider)
+        {
+            configurator.SetMessageSerializer(() => new EncryptedMessageSerializerV2(streamProvider));
+
+            configurator.AddMessageDeserializer(EncryptedMessageSerializerV2.EncryptedContentType,
+                () => new EncryptedMessageDeserializerV2(BsonMessageSerializer.Deserializer, streamProvider));
         }
 
         /// <summary>
@@ -94,7 +175,7 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseXmlSerializer(this IBusFactoryConfigurator configurator)
         {
-            configurator.AddBusFactorySpecification(new SetMessageSerializerBusFactorySpecification<XmlMessageSerializer>());
+            configurator.SetMessageSerializer(() => new XmlMessageSerializer());
         }
 
         /// <summary>
@@ -103,17 +184,18 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseXmlSerializer(this IReceiveEndpointConfigurator configurator)
         {
-            configurator.AddEndpointSpecification(new SetMessageSerializerReceiveEndpointSpecification<XmlMessageSerializer>());
+            configurator.SetMessageSerializer(() => new XmlMessageSerializer());
         }
+        
 
-#if !NETCORE
+    #if !NETCORE
         /// <summary>
         /// Serialize message using the .NET binary formatter (also adds support for the binary deserializer)
         /// </summary>
         /// <param name="configurator"></param>
         public static void UseBinarySerializer(this IBusFactoryConfigurator configurator)
         {
-            configurator.AddBusFactorySpecification(new SetMessageSerializerBusFactorySpecification<BinaryMessageSerializer>());
+            configurator.SetMessageSerializer(() => new BinaryMessageSerializer());
 
             configurator.SupportBinaryMessageDeserializer();
         }
@@ -124,7 +206,7 @@ namespace MassTransit
         /// <param name="configurator"></param>
         public static void UseBinarySerializer(this IReceiveEndpointConfigurator configurator)
         {
-            configurator.AddEndpointSpecification(new SetMessageSerializerReceiveEndpointSpecification<BinaryMessageSerializer>());
+            configurator.SetMessageSerializer(() => new BinaryMessageSerializer());
 
             configurator.SupportBinaryMessageDeserializer();
         }
@@ -137,8 +219,7 @@ namespace MassTransit
         /// <returns></returns>
         public static void SupportBinaryMessageDeserializer(this IBusFactoryConfigurator configurator)
         {
-            configurator.AddBusFactorySpecification(new SupportMessageDeserializerBusFactorySpecification(BinaryMessageSerializer.BinaryContentType,
-                () => new BinaryMessageDeserializer()));
+            configurator.AddMessageDeserializer(BinaryMessageSerializer.BinaryContentType, () => new BinaryMessageDeserializer());
         }
 
         /// <summary>
@@ -149,9 +230,8 @@ namespace MassTransit
         /// <returns></returns>
         public static void SupportBinaryMessageDeserializer(this IReceiveEndpointConfigurator configurator)
         {
-            configurator.AddEndpointSpecification(new SupportMessageDeserializerReceiveEndpointSpecification(BinaryMessageSerializer.BinaryContentType,
-                () => new BinaryMessageDeserializer()));
+            configurator.AddMessageDeserializer(BinaryMessageSerializer.BinaryContentType, () => new BinaryMessageDeserializer());
         }
-#endif
+    #endif
     }
 }

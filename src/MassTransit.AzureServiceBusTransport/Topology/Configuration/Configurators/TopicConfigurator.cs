@@ -10,8 +10,11 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration.Configurators
 {
+    using System;
+    using System.Collections.Generic;
+    using GreenPipes;
     using Microsoft.ServiceBus.Messaging;
 
 
@@ -19,16 +22,30 @@ namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
         MessageEntityConfigurator,
         ITopicConfigurator
     {
-        public TopicConfigurator(string topicPath)
+        public TopicConfigurator(string topicPath, bool temporary)
             : base(topicPath)
         {
+            if (temporary)
+            {
+                AutoDeleteOnIdle = Defaults.TemporaryAutoDeleteOnIdle;
+                EnableExpress = true;
+            }
         }
 
         public bool? EnableFilteringMessagesBeforePublishing { get; set; }
 
+        public IEnumerable<ValidationResult> Validate()
+        {
+            if (!ServiceBusEntityNameValidator.Validator.IsValidEntityName(Path))
+                yield return this.Failure("Path", $"must be a valid topic path: {Path}");
+
+            if (AutoDeleteOnIdle.HasValue && AutoDeleteOnIdle != TimeSpan.Zero && AutoDeleteOnIdle < TimeSpan.FromMinutes(5))
+                yield return this.Failure("AutoDeleteOnIdle", "must be zero, or >= 5:00");
+        }
+
         public TopicDescription GetTopicDescription()
         {
-            var topicDescription = new TopicDescription(Path);
+            var topicDescription = new TopicDescription(FullPath);
 
             if (AutoDeleteOnIdle.HasValue)
                 topicDescription.AutoDeleteOnIdle = AutoDeleteOnIdle.Value;

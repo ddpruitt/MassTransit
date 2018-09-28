@@ -10,14 +10,15 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration
 {
-    using System;
-    using Configurators;
+    using GreenPipes;
+    using Microsoft.ServiceBus.Messaging;
 
 
     public interface ISubscriptionConfigurator :
-        IEntityConfigurator
+        IEndpointEntityConfigurator,
+        ISpecification
     {
         /// <summary>
         /// The path of the subscription's topic
@@ -30,9 +31,9 @@ namespace MassTransit.AzureServiceBusTransport.Topology
         string SubscriptionName { get; }
 
         /// <summary>
-        /// Move messages to the dead letter queue on expiration (time to live exceeded)
+        /// Sets the path where messages are forwarded to
         /// </summary>
-        bool? EnableDeadLetteringOnMessageExpiration { set; }
+        string ForwardTo { set; }
 
         /// <summary>
         /// Move messages to the dead letter queue on filter evaluation exception
@@ -40,60 +41,15 @@ namespace MassTransit.AzureServiceBusTransport.Topology
         bool? EnableDeadLetteringOnFilterEvaluationExceptions { set; }
 
         /// <summary>
-        /// Sets the path to the recipient to which the dead lettered message is forwarded.
+        /// Specify the filter for the subscription
         /// </summary>
-        string ForwardDeadLetteredMessagesTo { set; }
+        Filter Filter { set; }
 
         /// <summary>
-        /// Sets the path where messages are forwarded to
+        /// Specify a rule for the subscription
         /// </summary>
-        string ForwardTo { set; }
+        RuleDescription Rule { set; }
 
-        /// <summary>
-        /// Specify the lock duration for messages read from the queue
-        /// </summary>
-        TimeSpan? LockDuration { set; }
-
-        /// <summary>
-        /// Sets the maximum delivery count. A message is automatically deadlettered after this number of deliveries.
-        /// </summary>
-        int? MaxDeliveryCount { set; }
-
-        /// <summary>
-        /// Sets the subscription in session mode, requiring a session for inbound messages
-        /// </summary>
-        bool? RequiresSession { set; }
-    }
-
-
-    public interface IConsumeEntityConfigurator
-    {
-        /// <summary>
-        /// Sets a value that indicates whether server-side batched operations are enabled
-        /// </summary>
-        bool EnableBatchedOperations { set; }
-
-        /// <summary>
-        /// Move messages to the dead letter queue on expiration (time to live exceeded)
-        /// </summary>
-        bool EnableDeadLetteringOnMessageExpiration { set; }
-
-        /// <summary>
-        /// Sets the path to the recipient to which the dead lettered message is forwarded.
-        /// </summary>
-        string ForwardDeadLetteredMessagesTo { set; }
-
-        /// <summary>
-        /// Specify the lock duration for messages read from the queue
-        /// </summary>
-        /// <value></value>
-        TimeSpan LockDuration { set; }
-
-        int MaxDeliveryCount { set; }
-
-        /// <summary>
-        /// Sets the queue in session mode, requiring a session for inbound messages
-        /// </summary>
-        bool RequiresSession { set; }
+        SubscriptionDescription GetSubscriptionDescription();
     }
 }

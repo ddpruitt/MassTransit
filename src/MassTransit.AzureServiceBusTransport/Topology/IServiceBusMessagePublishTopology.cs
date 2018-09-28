@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,12 +12,32 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.AzureServiceBusTransport.Topology
 {
+    using Builders;
     using MassTransit.Topology;
+    using Microsoft.ServiceBus.Messaging;
+    using Transport;
 
 
     public interface IServiceBusMessagePublishTopology<TMessage> :
-        IMessagePublishTopology<TMessage>
+        IMessagePublishTopology<TMessage>,
+        IServiceBusMessagePublishTopology
         where TMessage : class
     {
+        /// <summary>
+        /// Returns the topic description for the message type
+        /// </summary>
+        TopicDescription TopicDescription { get; }
+
+        SendSettings GetSendSettings();
+    }
+
+
+    public interface IServiceBusMessagePublishTopology
+    {
+        /// <summary>
+        /// Apply the message topology to the builder, including any implemented types
+        /// </summary>
+        /// <param name="builder">The topology builder</param>
+        void Apply(IPublishEndpointBrokerTopologyBuilder builder);
     }
 }

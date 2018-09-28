@@ -20,7 +20,7 @@ namespace MassTransit.RabbitMqTransport.Tests
     public class When_a_temporary_queue_is_specified :
         RabbitMqTestFixture
     {
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             Handler<Request>(configurator, x => x.RespondAsync(new Response()));
         }
@@ -39,16 +39,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public async Task Should_be_able_to_request_response()
         {
-            Task<Response> responseTask = null;
-            Task<Request<Request>> request = Bus.Request(InputQueueAddress, new Request(), x =>
-            {
-                responseTask = x.Handle<Response>();
-                x.Timeout = TestTimeout;
-            });
-
-            await request;
-
-            await responseTask;
+            await Bus.Request<Request, Response>(InputQueueAddress, new Request(), TestCancellationToken, TestTimeout);
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,12 +13,9 @@
 namespace MassTransit.AzureServiceBusTransport
 {
     using System;
-    using System.Threading.Tasks;
     using GreenPipes;
-    using Microsoft.ServiceBus;
-    using Microsoft.ServiceBus.Messaging;
-    using Transports;
-    using Util;
+    using Pipeline;
+    using Topology;
 
 
     /// <summary>
@@ -29,23 +26,30 @@ namespace MassTransit.AzureServiceBusTransport
     {
         ServiceBusHostSettings Settings { get; }
 
-        Task<MessagingFactory> MessagingFactory { get; }
+        /// <summary>
+        /// The base path used for queues on this host
+        /// </summary>
+        string BasePath { get; }
 
         /// <summary>
-        /// Session-based messages with state require the use of a net-tcp style client
+        /// Returns the topology of the service bus host
         /// </summary>
-        Task<MessagingFactory> SessionMessagingFactory { get; }
-
-        NamespaceManager NamespaceManager { get; }
-
-        NamespaceManager RootNamespaceManager { get; }
-
-        IMessageNameFormatter MessageNameFormatter { get; }
+        new IServiceBusHostTopology Topology { get; }
 
         /// <summary>
-        /// The supervisor for the host, which indicates when it's being stopped
+        /// The default messaging factory cache, could be AMQP or NET-TCP, depending upon configuration
         /// </summary>
-        ITaskSupervisor Supervisor { get; }
+        IMessagingFactoryCache MessagingFactoryCache { get; }
+
+        /// <summary>
+        /// The messaging factory cache for NET-TCP (may be the same as above, depending upon configuration)
+        /// </summary>
+        IMessagingFactoryCache NetMessagingFactoryCache { get; }
+
+        /// <summary>
+        /// The namespace cache for operating on the service bus namespace (management)
+        /// </summary>
+        INamespaceCache NamespaceCache { get; }
 
         /// <summary>
         /// The retry policy shared by transports communicating with the host. Should be
@@ -53,20 +57,12 @@ namespace MassTransit.AzureServiceBusTransport
         /// </summary>
         IRetryPolicy RetryPolicy { get; }
 
-        string GetQueuePath(QueueDescription queueDescription);
-
-        Task<TopicDescription> CreateTopic(TopicDescription topicDescription);
-
-        Task<QueueDescription> CreateQueue(QueueDescription queueDescription);
-
-        Task<SubscriptionDescription> CreateTopicSubscription(SubscriptionDescription description);
-
         /// <summary>
         /// Create a temporary receive endpoint on the host, with a separate handle for stopping/removing the endpoint
         /// </summary>
         /// <param name="configure"></param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectReceiveEndpoint(Action<IServiceBusReceiveEndpointConfigurator> configure = null);
+        HostReceiveEndpointHandle ConnectReceiveEndpoint(Action<IServiceBusReceiveEndpointConfigurator> configure = null);
 
         /// <summary>
         /// Create a receive endpoint on the host, with a separate handle for stopping/removing the endpoint
@@ -74,7 +70,7 @@ namespace MassTransit.AzureServiceBusTransport
         /// <param name="queueName"></param>
         /// <param name="configure"></param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectReceiveEndpoint(string queueName, Action<IServiceBusReceiveEndpointConfigurator> configure = null);
+        HostReceiveEndpointHandle ConnectReceiveEndpoint(string queueName, Action<IServiceBusReceiveEndpointConfigurator> configure = null);
 
         /// <summary>
         /// Create a subscription endpoint on the host, which can be stopped independently from the bus
@@ -83,8 +79,7 @@ namespace MassTransit.AzureServiceBusTransport
         /// <param name="subscriptionName">The subscription name for this endpoint</param>
         /// <param name="configure">Configuration callback for the endpoint</param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectSubscriptionEndpoint<T>(string subscriptionName,
-            Action<IServiceBusSubscriptionEndpointConfigurator> configure = null)
+        HostReceiveEndpointHandle ConnectSubscriptionEndpoint<T>(string subscriptionName,Action<IServiceBusSubscriptionEndpointConfigurator> configure = null)
             where T : class;
 
         /// <summary>
@@ -94,14 +89,7 @@ namespace MassTransit.AzureServiceBusTransport
         /// <param name="topicName">The topic name to subscribe for this endpoint</param>
         /// <param name="configure">Configuration callback for the endpoint</param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> ConnectSubscriptionEndpoint(string subscriptionName, string topicName,
+        HostReceiveEndpointHandle ConnectSubscriptionEndpoint(string subscriptionName, string topicName,
             Action<IServiceBusSubscriptionEndpointConfigurator> configure = null);
-
-        /// <summary>
-        /// Delete a topic subscription from the host
-        /// </summary>
-        /// <param name="description"></param>
-        /// <returns></returns>
-        Task DeleteTopicSubscription(SubscriptionDescription description);
     }
 }

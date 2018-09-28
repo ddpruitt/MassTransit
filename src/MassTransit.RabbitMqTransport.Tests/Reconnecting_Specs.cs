@@ -25,9 +25,9 @@ namespace MassTransit.RabbitMqTransport.Tests
     {
         ReconnectConsumer _consumer;
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
-            base.ConfigureRabbitMqReceiveEndoint(configurator);
+            base.ConfigureRabbitMqReceiveEndpoint(configurator);
 
             _consumer = new ReconnectConsumer(TestTimeout);
 
@@ -52,7 +52,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         }
 
 
-        [Test, Explicit]
+        [Test, Explicit, Category("SlowAF")]
         public async Task Should_fault_nicely()
         {
             await Bus.Publish(new ReconnectMessage {Value = "Before"});
@@ -72,42 +72,7 @@ namespace MassTransit.RabbitMqTransport.Tests
             Console.WriteLine("");
             Console.WriteLine("Resuming");
 
-            await Bus.Publish(new ReconnectMessage { Value = "After" });
-
-            bool afterFound = await Task.Run(() => _consumer.Received.Select<ReconnectMessage>(x => x.Context.Message.Value == "After").Any());
-            Assert.IsTrue(afterFound);
-        }
-
-        [Test, Explicit]
-        public async Task Should_not_lock_when_sending_during_unavailable()
-        {
-            Console.WriteLine("Okay, stop RabbitMQ");
-
-            for (int i = 0; i < 15; i++)
-            {
-                await Task.Delay(1000);
-
-                Console.Write($"{i}. ");
-            }
-
-            Console.WriteLine("Sending");
-
-            Assert.Throws<RabbitMqConnectionException>(async () => await Bus.Publish(new ReconnectMessage { Value = "Before" }));
-
-            Console.WriteLine("Start it back up");
-
-            for (int i = 0; i < 15; i++)
-            {
-                await Task.Delay(1000);
-
-                Console.Write($"{i}. ");
-            }
-
-            Console.WriteLine("Sending");
-
-            await Bus.Publish(new ReconnectMessage { Value = "After" });
-
-            Console.WriteLine("Sent");
+            await Bus.Publish(new ReconnectMessage {Value = "After"});
 
             bool afterFound = await Task.Run(() => _consumer.Received.Select<ReconnectMessage>(x => x.Context.Message.Value == "After").Any());
             Assert.IsTrue(afterFound);

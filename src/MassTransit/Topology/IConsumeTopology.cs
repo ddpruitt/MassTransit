@@ -12,20 +12,15 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.Topology
 {
-    using Configuration;
-
-
     public interface IConsumeTopology :
         IConnectConsumeTopologyConfigurationObserver
     {
-        IEntityNameFormatter EntityNameFormatter { get; }
-
         /// <summary>
         /// Returns the specification for the message type
         /// </summary>
         /// <typeparam name="T">The message type</typeparam>
         /// <returns></returns>
-        IMessageConsumeTopologyConfigurator<T> GetMessageTopology<T>()
+        IMessageConsumeTopology<T> GetMessageTopology<T>()
             where T : class;
     }
 }

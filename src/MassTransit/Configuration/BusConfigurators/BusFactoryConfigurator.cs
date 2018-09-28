@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,44 +15,59 @@ namespace MassTransit.BusConfigurators
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Net.Mime;
     using Builders;
     using Configuration;
     using ConsumeConfigurators;
-    using EndpointSpecifications;
     using GreenPipes;
+    using Pipeline.Observables;
     using Saga;
-    using Saga.SubscriptionConfigurators;
+    using SagaConfigurators;
+    using Topology;
 
 
-    public abstract class BusFactoryConfigurator<TBuilder>
-        where TBuilder : IBusBuilder
+    public abstract class BusFactoryConfigurator
     {
-        readonly IList<IReceiveEndpointSpecification<TBuilder>> _endpointSpecifications;
-        readonly IList<IBusFactorySpecification<TBuilder>> _specifications;
-        readonly IEndpointConfiguration _configuration;
+        readonly IEndpointConfiguration _busEndpointConfiguration;
+        readonly IBusConfiguration _configuration;
+        readonly IList<IReceiveEndpointSpecification<IBusBuilder>> _endpointSpecifications;
+        readonly IList<IBusFactorySpecification> _specifications;
 
-        protected BusFactoryConfigurator(IEndpointConfiguration configuration)
+        protected BusFactoryConfigurator(IBusConfiguration configuration, IEndpointConfiguration busEndpointConfiguration)
         {
             _configuration = configuration;
+            _busEndpointConfiguration = busEndpointConfiguration;
 
-            _specifications = new List<IBusFactorySpecification<TBuilder>>();
-            _endpointSpecifications = new List<IReceiveEndpointSpecification<TBuilder>>();
+            BusObservable = new BusObservable();
+            _specifications = new List<IBusFactorySpecification>();
+            _endpointSpecifications = new List<IReceiveEndpointSpecification<IBusBuilder>>();
+        }
+
+        protected BusObservable BusObservable { get; }
+
+        public IMessageTopologyConfigurator MessageTopology => _configuration.Topology.Message;
+        public ISendTopologyConfigurator SendTopology => _configuration.Topology.Send;
+        public IPublishTopologyConfigurator PublishTopology => _configuration.Topology.Publish;
+
+        public ConnectHandle ConnectBusObserver(IBusObserver observer)
+        {
+            return BusObservable.Connect(observer);
         }
 
         public void AddPipeSpecification(IPipeSpecification<ConsumeContext> specification)
         {
-            _configuration.ConsumePipeConfigurator.AddPipeSpecification(specification);
+            _configuration.Consume.Configurator.AddPipeSpecification(specification);
         }
 
         public void AddPrePipeSpecification(IPipeSpecification<ConsumeContext> specification)
         {
-            _configuration.ConsumePipeConfigurator.AddPrePipeSpecification(specification);
+            _configuration.Consume.Configurator.AddPrePipeSpecification(specification);
         }
 
         public void AddPipeSpecification<T>(IPipeSpecification<ConsumeContext<T>> specification)
             where T : class
         {
-            _configuration.ConsumePipeConfigurator.AddPipeSpecification(specification);
+            _configuration.Consume.Configurator.AddPipeSpecification(specification);
         }
 
         public void ConfigureSend(Action<ISendPipeConfigurator> callback)
@@ -60,7 +75,7 @@ namespace MassTransit.BusConfigurators
             if (callback == null)
                 throw new ArgumentNullException(nameof(callback));
 
-            callback(_configuration.SendPipeConfigurator);
+            callback(_configuration.Send.Configurator);
         }
 
         public void ConfigurePublish(Action<IPublishPipeConfigurator> callback)
@@ -68,107 +83,115 @@ namespace MassTransit.BusConfigurators
             if (callback == null)
                 throw new ArgumentNullException(nameof(callback));
 
-            callback(_configuration.PublishPipeConfigurator);
+            callback(_configuration.Publish.Configurator);
+        }
+
+        public void Message<T>(Action<IMessageTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            IMessageTopologyConfigurator<T> configurator = _configuration.Topology.Message.GetMessageTopology<T>();
+
+            configureTopology?.Invoke(configurator);
+        }
+
+        public void Send<T>(Action<IMessageSendTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            IMessageSendTopologyConfigurator<T> configurator = _configuration.Topology.Send.GetMessageTopology<T>();
+
+            configureTopology?.Invoke(configurator);
+        }
+
+        public void Publish<T>(Action<IMessagePublishTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            IMessagePublishTopologyConfigurator<T> configurator = _configuration.Topology.Publish.GetMessageTopology<T>();
+
+            configureTopology?.Invoke(configurator);
         }
 
         public void AddBusFactorySpecification(IBusFactorySpecification specification)
         {
-            _specifications.Add(CreateSpecificationProxy(specification));
-        }
-
-        public void AddBusFactorySpecification(IBusFactorySpecification<TBuilder> specification)
-        {
             _specifications.Add(specification);
         }
 
-        public void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<TBuilder> specification)
+        public void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<IBusBuilder> specification)
         {
             _endpointSpecifications.Add(specification);
         }
 
         public ConnectHandle ConnectConsumerConfigurationObserver(IConsumerConfigurationObserver observer)
         {
-            return _configuration.ConsumePipeConfigurator.ConnectConsumerConfigurationObserver(observer);
+            return _busEndpointConfiguration.Consume.Configurator.ConnectConsumerConfigurationObserver(observer);
         }
 
         public ConnectHandle ConnectSagaConfigurationObserver(ISagaConfigurationObserver observer)
         {
-            return _configuration.ConsumePipeConfigurator.ConnectSagaConfigurationObserver(observer);
-        }
-
-        /// <summary>
-        /// Before configuring any topology options, calling this will make it so that send and publish
-        /// topologies are completely separated for this bus. This means that some types may not properly
-        /// follow the topology rules, so use with caution.
-        /// </summary>
-        public void SeparatePublishFromSendTopology()
-        {
-            _configuration.SeparatePublishFromSendTopology();
+            return _busEndpointConfiguration.Consume.Configurator.ConnectSagaConfigurationObserver(observer);
         }
 
         public virtual IEnumerable<ValidationResult> Validate()
         {
             return _specifications.SelectMany(x => x.Validate())
                 .Concat(_endpointSpecifications.SelectMany(x => x.Validate()))
+                .Concat(_busEndpointConfiguration.Validate())
                 .Concat(_configuration.Validate());
         }
 
-        protected void ApplySpecifications(TBuilder builder)
+        protected void ApplySpecifications(IBusBuilder builder)
         {
-            foreach (IBusFactorySpecification<TBuilder> configurator in _specifications)
+            foreach (IBusFactorySpecification configurator in _specifications)
                 configurator.Apply(builder);
 
-            foreach (IReceiveEndpointSpecification<TBuilder> configurator in _endpointSpecifications)
+            foreach (IReceiveEndpointSpecification<IBusBuilder> configurator in _endpointSpecifications)
                 configurator.Apply(builder);
         }
 
-        protected virtual IBusFactorySpecification<TBuilder> CreateSpecificationProxy(IBusFactorySpecification specification)
+        public void SetMessageSerializer(SerializerFactory serializerFactory)
         {
-            return new ConfiguratorProxy(specification);
+            _configuration.Serialization.SetSerializer(serializerFactory);
         }
 
-        public void ConsumerConfigured<TConsumer>(IConsumerConfigurator<TConsumer> configurator) where TConsumer : class
+        public void AddMessageDeserializer(ContentType contentType, DeserializerFactory deserializerFactory)
         {
-            _configuration.ConsumePipeConfigurator.ConsumerConfigured(configurator);
+            _configuration.Serialization.AddDeserializer(contentType, deserializerFactory);
         }
 
-        public void ConsumerMessageConfigured<TConsumer, TMessage>(IConsumerMessageConfigurator<TConsumer, TMessage> configurator) where TConsumer : class
+        public void ConsumerConfigured<TConsumer>(IConsumerConfigurator<TConsumer> configurator)
+            where TConsumer : class
+        {
+            _busEndpointConfiguration.Consume.Configurator.ConsumerConfigured(configurator);
+        }
+
+        public void ConsumerMessageConfigured<TConsumer, TMessage>(IConsumerMessageConfigurator<TConsumer, TMessage> configurator)
+            where TConsumer : class
             where TMessage : class
         {
-            _configuration.ConsumePipeConfigurator.ConsumerMessageConfigured(configurator);
+            _busEndpointConfiguration.Consume.Configurator.ConsumerMessageConfigured(configurator);
         }
 
-        public void SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator) where TSaga : class, ISaga
+        public void SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator)
+            where TSaga : class, ISaga
         {
-            _configuration.ConsumePipeConfigurator.SagaConfigured(configurator);
+            _busEndpointConfiguration.Consume.Configurator.SagaConfigured(configurator);
         }
 
-        public void SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator) where TSaga : class, ISaga
+        public void SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator)
+            where TSaga : class, ISaga
             where TMessage : class
         {
-            _configuration.ConsumePipeConfigurator.SagaMessageConfigured(configurator);
+            _busEndpointConfiguration.Consume.Configurator.SagaMessageConfigured(configurator);
         }
 
-
-        class ConfiguratorProxy :
-            IBusFactorySpecification<TBuilder>
+        public ConnectHandle ConnectHandlerConfigurationObserver(IHandlerConfigurationObserver observer)
         {
-            readonly IBusFactorySpecification _configurator;
+            return _busEndpointConfiguration.Consume.Configurator.ConnectHandlerConfigurationObserver(observer);
+        }
 
-            public ConfiguratorProxy(IBusFactorySpecification configurator)
-            {
-                _configurator = configurator;
-            }
-
-            public IEnumerable<ValidationResult> Validate()
-            {
-                return _configurator.Validate();
-            }
-
-            public void Apply(TBuilder builder)
-            {
-                _configurator.Apply(builder);
-            }
+        public void HandlerConfigured<TMessage>(IHandlerConfigurator<TMessage> configurator)
+            where TMessage : class
+        {
+            _busEndpointConfiguration.Consume.Configurator.HandlerConfigured(configurator);
         }
     }
 }

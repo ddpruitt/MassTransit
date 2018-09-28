@@ -22,17 +22,25 @@ namespace MassTransit.AzureServiceBusTransport.Tests
     public class Creating_a_receive_endpoint_from_an_existing_bus :
         AzureServiceBusTestFixture
     {
+        public Creating_a_receive_endpoint_from_an_existing_bus()
+        {
+            TestTimeout = TimeSpan.FromMinutes(1);
+        }
+
         [Test]
         public async Task Should_be_allowed()
         {
             Task<ConsumeContext<PingMessage>> pingHandled = null;
 
-            var handle = await Host.ConnectReceiveEndpoint("second_queue", x =>
+            var handle = Host.ConnectReceiveEndpoint("second_queue", x =>
             {
                 pingHandled = Handled<PingMessage>(x);
 
                 x.RemoveSubscriptions = true;
             });
+
+            await handle.Ready;
+
             try
             {
                 await Bus.Publish(new PingMessage());
@@ -50,17 +58,22 @@ namespace MassTransit.AzureServiceBusTransport.Tests
         [Test]
         public async Task Should_not_be_allowed_twice()
         {
-            var handle = await Host.ConnectReceiveEndpoint("second_queue", x =>
+            var handle = Host.ConnectReceiveEndpoint("second_queue", x =>
             {
                 Handled<PingMessage>(x);
             });
+
+            await handle.Ready;
+
             try
             {
                 Assert.That(async () =>
                 {
-                    var unused = await Host.ConnectReceiveEndpoint("second_queue", x =>
+                    var unused = Host.ConnectReceiveEndpoint("second_queue", x =>
                     {
                     });
+
+                    await unused.Ready;
                 }, Throws.TypeOf<ConfigurationException>());
             }
             finally
@@ -80,10 +93,13 @@ namespace MassTransit.AzureServiceBusTransport.Tests
         {
             Task<ConsumeContext<PingMessage>> pingHandled = null;
 
-            var handle = await Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
+            var handle = Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
             {
                 pingHandled = Handled<PingMessage>(x);
             });
+
+            await handle.Ready;
+
             try
             {
                 await Bus.Publish(new PingMessage());
@@ -91,7 +107,8 @@ namespace MassTransit.AzureServiceBusTransport.Tests
                 ConsumeContext<PingMessage> pinged = await pingHandled;
 
                 Assert.That(pinged.ReceiveContext.InputAddress,
-                    Is.EqualTo(new Uri(Host.Address, string.Join("/", Host.MessageNameFormatter.GetMessageName(typeof(PingMessage)), "second_subscription"))));
+                    Is.EqualTo(new Uri(string.Join("/", Host.Address.GetLeftPart(UriPartial.Authority), Host.Topology.Message<PingMessage>().EntityName, "Subscriptions",
+                        "second_subscription"))));
             }
             finally
             {
@@ -102,17 +119,22 @@ namespace MassTransit.AzureServiceBusTransport.Tests
         [Test]
         public async Task Should_not_be_allowed_twice()
         {
-            var handle = await Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
+            var handle = Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
             {
                 Handled<PingMessage>(x);
             });
+
+            await handle.Ready;
+
             try
             {
                 Assert.That(async () =>
                 {
-                    var unused = await Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
+                    var unused = Host.ConnectSubscriptionEndpoint<PingMessage>("second_subscription", x =>
                     {
                     });
+
+                    await unused.Ready;
                 }, Throws.TypeOf<ConfigurationException>());
             }
             finally

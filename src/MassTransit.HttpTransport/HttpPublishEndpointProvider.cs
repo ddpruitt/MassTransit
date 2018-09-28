@@ -15,6 +15,7 @@ namespace MassTransit.HttpTransport
     using System;
     using System.Threading.Tasks;
     using GreenPipes;
+    using GreenPipes.Util;
     using MassTransit.Pipeline;
     using MassTransit.Pipeline.Observables;
     using MassTransit.Pipeline.Pipes;
@@ -24,15 +25,15 @@ namespace MassTransit.HttpTransport
     public class HttpPublishEndpointProvider :
         IPublishEndpointProvider
     {
-        readonly IHttpHost _host;
         readonly PublishObservable _publishObservable;
         readonly IPublishPipe _publishPipe;
+        readonly Uri _hostAddress;
         readonly IMessageSerializer _serializer;
         readonly ISendTransportProvider _transportProvider;
 
-        public HttpPublishEndpointProvider(IHttpHost host, IMessageSerializer serializer, ISendTransportProvider transportProvider, IPublishPipe publishPipe)
+        public HttpPublishEndpointProvider(Uri hostAddress, IMessageSerializer serializer, ISendTransportProvider transportProvider, IPublishPipe publishPipe)
         {
-            _host = host;
+            _hostAddress = hostAddress;
             _serializer = serializer;
             _transportProvider = transportProvider;
             _publishPipe = publishPipe;
@@ -45,9 +46,9 @@ namespace MassTransit.HttpTransport
             return _publishObservable.Connect(observer);
         }
 
-        public IPublishEndpoint CreatePublishEndpoint(Uri sourceAddress, Guid? correlationId = null, Guid? conversationId = null)
+        public IPublishEndpoint CreatePublishEndpoint(Uri sourceAddress, ConsumeContext consumeContext)
         {
-            return new PublishEndpoint(sourceAddress, this, _publishObservable, _publishPipe, correlationId, conversationId);
+            return new PublishEndpoint(sourceAddress, this, _publishObservable, _publishPipe, consumeContext);
         }
 
         async Task<ISendEndpoint> IPublishEndpointProvider.GetPublishSendEndpoint<T>(T message)
@@ -57,7 +58,12 @@ namespace MassTransit.HttpTransport
 
             var transport = await _transportProvider.GetSendTransport(destinationAddress).ConfigureAwait(false);
 
-            return new SendEndpoint(transport, _serializer, destinationAddress, _host.Address, SendPipe.Empty);
+            return new SendEndpoint(transport, _serializer, destinationAddress, _hostAddress, SendPipe.Empty);
+        }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer)
+        {
+            return new EmptyConnectHandle();
         }
     }
 }

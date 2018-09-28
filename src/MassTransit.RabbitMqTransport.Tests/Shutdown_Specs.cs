@@ -31,7 +31,7 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             IBusControl bus = Bus.Factory.CreateUsingRabbitMq(x =>
             {
-                IRabbitMqHost host = x.Host("[::1]", "test", h =>
+                IRabbitMqHost host = x.Host("localhost", "test", h =>
                 {
                 });
 
@@ -68,6 +68,8 @@ namespace MassTransit.RabbitMqTransport.Tests
                 await bus.Publish(new PingMessage());
 
                 await consumerStarted.Task;
+                
+                await Console.Out.WriteLineAsync("Consumer Start Acknowledged");
             }
             finally
             {
@@ -84,7 +86,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         {
             IBusControl bus = Bus.Factory.CreateUsingRabbitMq(x =>
             {
-                IRabbitMqHost host = x.Host("[::1]", "test", h =>
+                IRabbitMqHost host = x.Host("localhost", "test", h =>
                 {
                 });
 

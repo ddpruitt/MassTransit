@@ -10,14 +10,16 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the 
 // specific language governing permissions and limitations under the License.
-namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
+namespace MassTransit.AzureServiceBusTransport.Topology.Configuration.Configurators
 {
     using System;
+    using System.Collections.Generic;
+    using GreenPipes;
     using Microsoft.ServiceBus.Messaging;
 
 
     public class SubscriptionConfigurator :
-        EntityConfigurator,
+        EndpointEntityConfigurator,
         ISubscriptionConfigurator
     {
         public SubscriptionConfigurator(string topicPath, string subscriptionName)
@@ -26,23 +28,31 @@ namespace MassTransit.AzureServiceBusTransport.Topology.Configurators
             SubscriptionName = subscriptionName;
         }
 
-        public bool? EnableDeadLetteringOnMessageExpiration { private get; set; }
-
         public bool? EnableDeadLetteringOnFilterEvaluationExceptions { private get; set; }
 
-        public string ForwardDeadLetteredMessagesTo { private get; set; }
+        public Filter Filter { get; set; }
+        public RuleDescription Rule { get; set; }
 
         public string ForwardTo { private get; set; }
-
-        public TimeSpan? LockDuration { private get; set; }
-
-        public int? MaxDeliveryCount { private get; set; }
-
-        public bool? RequiresSession { private get; set; }
 
         public string TopicPath { get; }
 
         public string SubscriptionName { get; }
+
+        public IEnumerable<ValidationResult> Validate()
+        {
+            if (!ServiceBusEntityNameValidator.Validator.IsValidEntityName(TopicPath))
+                yield return this.Failure("TopicPath", $"must be a valid topic path: {TopicPath}");
+
+            if (!ServiceBusSubscriptionNameValidator.Validator.IsValidEntityName(SubscriptionName))
+                yield return this.Failure("SubscriptionName", $"must be a valid subscription name: {SubscriptionName}");
+
+            if (AutoDeleteOnIdle.HasValue && AutoDeleteOnIdle != TimeSpan.Zero && AutoDeleteOnIdle < TimeSpan.FromMinutes(5))
+                yield return this.Failure("AutoDeleteOnIdle", "must be zero, or >= 5:00");
+
+            if (Rule != null && Filter != null)
+                yield return this.Failure("Rule/Filter", "only a rule or a filter may be specified");
+        }
 
         public SubscriptionDescription GetSubscriptionDescription()
         {

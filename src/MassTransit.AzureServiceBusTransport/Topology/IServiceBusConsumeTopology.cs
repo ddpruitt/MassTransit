@@ -12,7 +12,6 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.AzureServiceBusTransport.Topology
 {
-    using System;
     using Builders;
     using MassTransit.Topology;
 
@@ -20,21 +19,13 @@ namespace MassTransit.AzureServiceBusTransport.Topology
     public interface IServiceBusConsumeTopology :
         IConsumeTopology
     {
-        new IServiceBusMessageConsumeTopologyConfigurator<T> GetMessageTopology<T>()
+        new IServiceBusMessageConsumeTopology<T> GetMessageTopology<T>()
             where T : class;
 
         /// <summary>
         /// Apply the entire topology to the builder
         /// </summary>
         /// <param name="builder"></param>
-        void Apply(IReceiveEndpointConsumeTopologyBuilder builder);
-
-        /// <summary>
-        /// Create a topic subscription by specifying the topic name
-        /// </summary>
-        /// <param name="topicPath">The topic name</param>
-        /// <param name="subscriptionName">The unique subscription name</param>
-        /// <param name="configure">Configure the subscription settings</param>
-        void Subscribe(string topicPath, string subscriptionName, Action<ISubscriptionConfigurator> configure = null);
+        void Apply(IReceiveEndpointBrokerTopologyBuilder builder);
     }
 }

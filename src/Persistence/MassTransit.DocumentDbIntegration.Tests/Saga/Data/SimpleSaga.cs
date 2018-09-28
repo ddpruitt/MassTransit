@@ -5,13 +5,14 @@
     using System.Threading.Tasks;
     using MassTransit;
     using MassTransit.Saga;
+    using Microsoft.Azure.Documents;
     using Newtonsoft.Json;
 
     public class SimpleSaga :
         InitiatedBy<InitiateSimpleSaga>,
         Orchestrates<CompleteSimpleSaga>,
         Observes<ObservableSagaMessage, SimpleSaga>,
-        ISaga
+        IVersionedSaga
     {
         public bool Completed { get; private set; }
 
@@ -29,8 +30,11 @@
             return Task.FromResult(0);
         }
 
-        [JsonProperty("id")]
         public Guid CorrelationId { get; set; }
+
+        public string ETag { get; set; }
+
+        public string Username { get; set; }
 
         public Task Consume(ConsumeContext<ObservableSagaMessage> message)
         {
