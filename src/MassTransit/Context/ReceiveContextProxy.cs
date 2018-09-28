@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -18,6 +18,7 @@ namespace MassTransit.Context
     using System.Threading;
     using System.Threading.Tasks;
     using GreenPipes;
+    using Topology;
 
 
     public abstract class ReceiveContextProxy :
@@ -37,17 +38,29 @@ namespace MassTransit.Context
             return _context.HasPayloadType(contextType);
         }
 
-        public virtual bool TryGetPayload<TPayload>(out TPayload payload) where TPayload : class
+        public virtual bool TryGetPayload<TPayload>(out TPayload payload)
+            where TPayload : class
         {
             return _context.TryGetPayload(out payload);
         }
 
-        public virtual TPayload GetOrAddPayload<TPayload>(PayloadFactory<TPayload> payloadFactory) where TPayload : class
+        public virtual TPayload GetOrAddPayload<TPayload>(PayloadFactory<TPayload> payloadFactory)
+            where TPayload : class
         {
             return _context.GetOrAddPayload(payloadFactory);
         }
 
-        public virtual Stream GetBody()
+        T PipeContext.AddOrUpdatePayload<T>(PayloadFactory<T> addFactory, UpdatePayloadFactory<T> updateFactory)
+        {
+            return _context.AddOrUpdatePayload(addFactory, updateFactory);
+        }
+
+        public Stream GetBodyStream()
+        {
+            return _context.GetBodyStream();
+        }
+
+        byte[] ReceiveContext.GetBody()
         {
             return _context.GetBody();
         }
@@ -61,12 +74,14 @@ namespace MassTransit.Context
         public bool IsDelivered => _context.IsDelivered;
         public bool IsFaulted => _context.IsFaulted;
 
-        public virtual Task NotifyConsumed<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType) where T : class
+        public virtual Task NotifyConsumed<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType)
+            where T : class
         {
             return _context.NotifyConsumed(context, duration, consumerType);
         }
 
-        public virtual Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception) where T : class
+        public virtual Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
+            where T : class
         {
             return _context.NotifyFaulted(context, duration, consumerType, exception);
         }
@@ -82,7 +97,7 @@ namespace MassTransit.Context
         }
 
         ISendEndpointProvider ReceiveContext.SendEndpointProvider => _context.SendEndpointProvider;
-
         IPublishEndpointProvider ReceiveContext.PublishEndpointProvider => _context.PublishEndpointProvider;
+        IPublishTopology ReceiveContext.PublishTopology => _context.PublishTopology;
     }
 }

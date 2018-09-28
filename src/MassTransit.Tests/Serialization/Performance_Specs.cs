@@ -20,6 +20,8 @@ namespace MassTransit.Tests.Serialization
     using MassTransit.Serialization;
     using MassTransit.Transports;
     using MassTransit.Transports.InMemory;
+    using MassTransit.Transports.InMemory.Contexts;
+    using MassTransit.Transports.InMemory.Fabric;
     using Messages;
     using NUnit.Framework;
     using Util;
@@ -29,6 +31,7 @@ namespace MassTransit.Tests.Serialization
     [TestFixture(typeof(BsonMessageSerializer))]
     [TestFixture(typeof(XmlMessageSerializer))]
     [TestFixture(typeof(EncryptedMessageSerializer))]
+    [TestFixture(typeof(EncryptedMessageSerializerV2))]
     [Explicit]
     public class Serializer_performance :
         SerializationTest
@@ -85,7 +88,7 @@ namespace MassTransit.Tests.Serialization
                 byte[] data = Serialize(sendContext);
 
                 var transportMessage = new InMemoryTransportMessage(Guid.NewGuid(), data, Serializer.ContentType.MediaType, TypeMetadataCache<SerializationTestMessage>.ShortName);
-                receiveContext = new InMemoryReceiveContext(new Uri("loopback://localhost/input_queue"), transportMessage, new ReceiveObservable(), Bus, PublishEndpointProvider);
+                receiveContext = new InMemoryReceiveContext(new Uri("loopback://localhost/input_queue"), transportMessage, new ReceiveObservable(), null);
 
                 Deserialize<SerializationTestMessage>(receiveContext);
             }

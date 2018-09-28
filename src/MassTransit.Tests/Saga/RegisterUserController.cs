@@ -17,8 +17,10 @@ namespace MassTransit.Tests.Saga
 	using Messages;
 
 	public class RegisterUserController :
+	#pragma warning disable 618
 		Consumes<UserRegistrationPending>.All,
 		Consumes<UserRegistrationComplete>.All
+    #pragma warning restore 618
 	{
 		readonly IBus _bus;
 		readonly ManualResetEvent _registrationComplete = new ManualResetEvent(false);
@@ -66,14 +68,14 @@ namespace MassTransit.Tests.Saga
 
         bool WaitOn(WaitHandle handle, TimeSpan timeout, string message)
         {
-            int result = WaitHandle.WaitAny(new[] { handle }, timeout, true);
+            int result = WaitHandle.WaitAny(new[] { handle }, timeout);
             if (result == 0)
                 return true;
 
             if (result == 1)
                 return false;
 
-            throw new ApplicationException(message);
+            throw new Exception(message);
         }
 	}
 }

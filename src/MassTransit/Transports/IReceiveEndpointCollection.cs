@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,8 +12,8 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.Transports
 {
-    using System.Threading.Tasks;
     using GreenPipes;
+    using GreenPipes.Agents;
     using Pipeline;
 
 
@@ -22,6 +22,9 @@ namespace MassTransit.Transports
         IReceiveEndpointObserverConnector,
         IConsumeMessageObserverConnector,
         IConsumeObserverConnector,
+        IPublishObserverConnector,
+        ISendObserverConnector,
+        IAgent,
         IProbeSite
     {
         /// <summary>
@@ -29,20 +32,20 @@ namespace MassTransit.Transports
         /// </summary>
         /// <param name="endpointName"></param>
         /// <param name="endpoint"></param>
-        void Add(string endpointName, IReceiveEndpoint endpoint);
+        void Add(string endpointName, IReceiveEndpointControl endpoint);
 
         /// <summary>
         /// Start all endpoints in the collection which have not been started, and return the handles
         /// for those endpoints.
         /// </summary>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle[]> StartEndpoints();
+        HostReceiveEndpointHandle[] StartEndpoints();
 
         /// <summary>
         /// Start a new receive endpoint
         /// </summary>
         /// <param name="endpointName"></param>
         /// <returns></returns>
-        Task<HostReceiveEndpointHandle> Start(string endpointName);
+        HostReceiveEndpointHandle Start(string endpointName);
     }
 }

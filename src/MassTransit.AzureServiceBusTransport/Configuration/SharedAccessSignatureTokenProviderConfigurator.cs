@@ -26,8 +26,7 @@ namespace MassTransit.AzureServiceBusTransport
 
         public TokenProvider GetTokenProvider()
         {
-            return TokenProvider.CreateSharedAccessSignatureTokenProvider(KeyName, SharedAccessKey,
-                TokenTimeToLive, TokenScope);
+            return TokenProvider.CreateSharedAccessSignatureTokenProvider(KeyName, SharedAccessKey, TokenTimeToLive, TokenScope);
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,51 +13,64 @@
 namespace MassTransit.Transports.InMemory
 {
     using System;
-    using System.Collections.Concurrent;
-    using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
+    using Builders;
+    using Configuration;
+    using Context;
+    using Fabric;
     using GreenPipes;
+    using GreenPipes.Agents;
+    using GreenPipes.Caching;
+    using Logging;
+    using MassTransit.Topology;
     using Pipeline;
+    using Topology.Builders;
 
 
     /// <summary>
     /// Caches InMemory transport instances so that they are only created and used once
     /// </summary>
     public class InMemoryHost :
-        IInMemoryHost,
-        ISendTransportProvider,
-        IBusHostControl
+        Supervisor,
+        IInMemoryHostControl,
+        ISendTransportProvider
     {
+        static readonly ILog _log = Logger.Get<InMemoryHost>();
         readonly Uri _baseUri;
-        readonly int _concurrencyLimit;
+        readonly IIndex<string, InMemorySendTransport> _index;
+        readonly IMessageFabric _messageFabric;
         readonly IReceiveEndpointCollection _receiveEndpoints;
-        readonly ConcurrentDictionary<string, InMemoryTransport> _transports;
-        ISendEndpointProvider _sendEndpointProvider;
-        IPublishEndpointProvider _publishEndpointProvider;
+        readonly IInMemoryReceiveEndpointFactory _receiveEndpointFactory;
 
-        public InMemoryHost(int concurrencyLimit, Uri baseAddress = null)
+        public InMemoryHost(IInMemoryBusConfiguration busConfiguration, int concurrencyLimit, IHostTopology topology, Uri baseAddress = null)
         {
-            _concurrencyLimit = concurrencyLimit;
+            Topology = topology;
             _baseUri = baseAddress ?? new Uri("loopback://localhost/");
 
-            _transports = new ConcurrentDictionary<string, InMemoryTransport>(StringComparer.OrdinalIgnoreCase);
+            _messageFabric = new MessageFabric(concurrencyLimit);
+
             _receiveEndpoints = new ReceiveEndpointCollection();
-        }
+            
+            var cacheSettings = new CacheSettings(10000, TimeSpan.FromMinutes(1), TimeSpan.FromHours(24));
 
-        public IInMemoryReceiveEndpointFactory ReceiveEndpointFactory { private get; set; }
+            var cache = new GreenCache<InMemorySendTransport>(cacheSettings);
+            _index = cache.AddIndex("exchangeName", x => x.ExchangeName);
 
-        public IEnumerable<Uri> TransportAddresses
-        {
-            get { return _transports.Keys.Select(x => new Uri(_baseUri, x)); }
+            _receiveEndpointFactory = new InMemoryReceiveEndpointFactory(busConfiguration);
         }
 
         public IReceiveEndpointCollection ReceiveEndpoints => _receiveEndpoints;
 
+        public void AddReceiveEndpoint(string endpointName, IReceiveEndpointControl receiveEndpoint)
+        {
+            ReceiveEndpoints.Add(endpointName, receiveEndpoint);
+        }
+
         public async Task<HostHandle> Start()
         {
-            HostReceiveEndpointHandle[] handles = await ReceiveEndpoints.StartEndpoints().ConfigureAwait(false);
+            HostReceiveEndpointHandle[] handles = ReceiveEndpoints.StartEndpoints();
 
             return new Handle(this, handles);
         }
@@ -75,42 +88,37 @@ namespace MassTransit.Transports.InMemory
                 Type = "InMemory"
             });
 
-            foreach (KeyValuePair<string, InMemoryTransport> transport in _transports)
-            {
-                var transportScope = scope.CreateScope("queue");
-                transportScope.Set(new
-                {
-                    Name = transport.Key
-                });
-            }
+            _messageFabric.Probe(scope);
 
             _receiveEndpoints.Probe(scope);
         }
 
-        public IReceiveTransport GetReceiveTransport(string queueName, int concurrencyLimit, ISendEndpointProvider sendEndpointProvider, IPublishEndpointProvider publishEndpointProvider)
+        public IReceiveTransport GetReceiveTransport(string queueName, IReceivePipe receivePipe, ReceiveEndpointContext topology)
         {
-            if (concurrencyLimit <= 0)
-                concurrencyLimit = _concurrencyLimit;
+            if (_log.IsDebugEnabled)
+                _log.DebugFormat("Creating receive transport for queue: {0}", queueName);
 
-            if (_sendEndpointProvider == null)
-                _sendEndpointProvider = sendEndpointProvider;
-            if (_publishEndpointProvider == null)
-                _publishEndpointProvider = publishEndpointProvider;
+            var queue = _messageFabric.GetQueue(queueName);
 
-            return _transports.GetOrAdd(queueName, name => new InMemoryTransport(new Uri(_baseUri, name), concurrencyLimit, sendEndpointProvider, publishEndpointProvider));
+            var skippedExchange = _messageFabric.GetExchange($"{queueName}_skipped");
+            var errorExchange = _messageFabric.GetExchange($"{queueName}_error");
+
+            var transport = new InMemoryReceiveTransport(new Uri(_baseUri, queueName), queue, receivePipe, errorExchange, skippedExchange, topology);
+            Add(transport);
+
+            return transport;
         }
 
-        public Task<HostReceiveEndpointHandle> ConnectReceiveEndpoint(string queueName, Action<IInMemoryReceiveEndpointConfigurator> configure)
+        public HostReceiveEndpointHandle ConnectReceiveEndpoint(string queueName, Action<IInMemoryReceiveEndpointConfigurator> configure = null)
         {
-            if (ReceiveEndpointFactory == null)
-                throw new ConfigurationException("The receive endpoint factory was not specified");
-
-            ReceiveEndpointFactory.CreateReceiveEndpoint(queueName, configure);
+            _receiveEndpointFactory.CreateReceiveEndpoint(queueName, configure);
 
             return _receiveEndpoints.Start(queueName);
         }
 
         public Uri Address => _baseUri;
+
+        public IHostTopology Topology { get; }
 
         ConnectHandle IConsumeMessageObserverConnector.ConnectConsumeMessageObserver<T>(IConsumeMessageObserver<T> observer)
         {
@@ -132,22 +140,51 @@ namespace MassTransit.Transports.InMemory
             return _receiveEndpoints.ConnectReceiveEndpointObserver(observer);
         }
 
+        ConnectHandle IPublishObserverConnector.ConnectPublishObserver(IPublishObserver observer)
+        {
+            return _receiveEndpoints.ConnectPublishObserver(observer);
+        }
+
+        ConnectHandle ISendObserverConnector.ConnectSendObserver(ISendObserver observer)
+        {
+            return _receiveEndpoints.ConnectSendObserver(observer);
+        }
+
         public async Task<ISendTransport> GetSendTransport(Uri address)
         {
             var queueName = address.AbsolutePath.Split('/').Last();
 
-            return GetTransport(queueName);
+            return await _index.Get(queueName, async key =>
+            {
+                if (_log.IsDebugEnabled)
+                    _log.DebugFormat("Creating send transport for exchange: {0}", queueName);
+
+                var exchange = _messageFabric.GetExchange(queueName);
+
+                var transport = new InMemorySendTransport(exchange);
+
+                return transport;
+            });
         }
 
-        public IInMemoryTransport GetTransport(string queueName)
+        public IInMemoryExchange GetExchange(Uri address)
         {
-            return _transports.GetOrAdd(queueName, name =>
-            {
-                if (_sendEndpointProvider == null || _publishEndpointProvider == null)
-                    throw new NotSupportedException("Okay, so somehow a send transport was requested first.");
+            var queueName = address.AbsolutePath.Split('/').Last();
 
-                return new InMemoryTransport(new Uri(_baseUri, name), _concurrencyLimit, _sendEndpointProvider, _publishEndpointProvider);
-            });
+            var exchange = _messageFabric.GetExchange(queueName);
+
+            return exchange;
+        }
+
+        public IInMemoryPublishTopologyBuilder CreatePublishTopologyBuilder(
+            PublishEndpointTopologyBuilder.Options options = PublishEndpointTopologyBuilder.Options.MaintainHierarchy)
+        {
+            return new PublishEndpointTopologyBuilder(_messageFabric, options);
+        }
+
+        public IInMemoryConsumeTopologyBuilder CreateConsumeTopologyBuilder()
+        {
+            return new InMemoryConsumeTopologyBuilder(_messageFabric);
         }
 
 
@@ -165,8 +202,6 @@ namespace MassTransit.Transports.InMemory
             public override async Task Stop(CancellationToken cancellationToken)
             {
                 await base.Stop(cancellationToken).ConfigureAwait(false);
-
-                Parallel.ForEach(_host._transports.Values, x => x.Dispose());
             }
         }
     }

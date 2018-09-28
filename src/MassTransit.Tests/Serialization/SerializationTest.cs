@@ -20,6 +20,8 @@ namespace MassTransit.Tests.Serialization
     using MassTransit.Pipeline.Observables;
     using MassTransit.Serialization;
     using MassTransit.Transports.InMemory;
+    using MassTransit.Transports.InMemory.Contexts;
+    using MassTransit.Transports.InMemory.Fabric;
     using Newtonsoft.Json;
     using NUnit.Framework;
     using Shouldly;
@@ -70,10 +72,26 @@ namespace MassTransit.Tests.Serialization
                 Serializer = new EncryptedMessageSerializer(streamProvider);
                 Deserializer = new EncryptedMessageDeserializer(BsonMessageSerializer.Deserializer, streamProvider);
             }
+            else if (_serializerType == typeof(EncryptedMessageSerializerV2))
+            {
+                var key = new byte[]
+                {
+                    31, 182, 254, 29, 98, 114, 85, 168, 176, 48, 113,
+                    206, 198, 176, 181, 125, 106, 134, 98, 217, 113,
+                    158, 88, 75, 118, 223, 117, 160, 224, 1, 47, 162
+                };
+                var keyProvider = new ConstantSecureKeyProvider(key);
+                var streamProvider = new AesCryptoStreamProviderV2(keyProvider);
+
+                Serializer = new EncryptedMessageSerializerV2(streamProvider);
+                Deserializer = new EncryptedMessageDeserializerV2(BsonMessageSerializer.Deserializer, streamProvider);
+            }
+#if !NETCORE
             else if (_serializerType == typeof(BinaryMessageSerializer)) {
                 Serializer = new BinaryMessageSerializer();
                 Deserializer = new BinaryMessageDeserializer();
             }
+#endif
             else
                 throw new ArgumentException("The serializer type is unknown");
         }
@@ -113,7 +131,7 @@ namespace MassTransit.Tests.Serialization
             where T : class
         {
             var message = new InMemoryTransportMessage(Guid.NewGuid(), serializedMessageData, Serializer.ContentType.MediaType, TypeMetadataCache<T>.ShortName);
-            var receiveContext = new InMemoryReceiveContext(new Uri("loopback://localhost/input_queue"), message, new ReceiveObservable(), Bus, PublishEndpointProvider);
+            var receiveContext = new InMemoryReceiveContext(new Uri("loopback://localhost/input_queue"), message, new ReceiveObservable(), null);
 
             ConsumeContext consumeContext = Deserializer.Deserialize(receiveContext);
 

@@ -19,7 +19,6 @@ namespace MassTransit.AzureServiceBusTransport.Contexts
     using System.Threading.Tasks;
     using Context;
     using Microsoft.ServiceBus.Messaging;
-    using Transports;
 
 
     public sealed class ServiceBusReceiveContext :
@@ -29,15 +28,15 @@ namespace MassTransit.AzureServiceBusTransport.Contexts
         readonly BrokeredMessage _message;
         byte[] _body;
 
-        public ServiceBusReceiveContext(Uri inputAddress, BrokeredMessage message, IReceiveObserver observer, ISendEndpointProvider sendEndpointProvider, IPublishEndpointProvider publishEndpointProvider)
-            : base(inputAddress, message.DeliveryCount > 1, observer, sendEndpointProvider, publishEndpointProvider)
+        public ServiceBusReceiveContext(Uri inputAddress, BrokeredMessage message, IReceiveObserver observer, ReceiveEndpointContext receiveEndpointContext)
+            : base(inputAddress, message.DeliveryCount > 1, observer, receiveEndpointContext)
         {
             _message = message;
 
             GetOrAddPayload<BrokeredMessageContext>(() => this);
         }
 
-        protected override IHeaderProvider HeaderProvider => new DictionaryHeaderProvider(_message.Properties);
+        protected override IHeaderProvider HeaderProvider => new ServiceBusHeaderProvider(this);
 
         public string MessageId => _message.MessageId;
 
@@ -86,20 +85,31 @@ namespace MassTransit.AzureServiceBusTransport.Contexts
             return _message.RenewLockAsync();
         }
 
-        protected override Stream GetBodyStream()
+        public override byte[] GetBody()
         {
             if (_body == null)
-            {
-                using (var bodyStream = _message.GetBody<Stream>())
-                using (var ms = new MemoryStream())
-                {
-                    bodyStream.CopyTo(ms);
+                GetBodyAsByteArray();
 
-                    _body = ms.ToArray();
-                }
-            }
+            return _body;
+        }
+
+        public override Stream GetBodyStream()
+        {
+            if (_body == null)
+                GetBodyAsByteArray();
 
             return new MemoryStream(_body, false);
+        }
+
+        void GetBodyAsByteArray()
+        {
+            using (var bodyStream = _message.GetBody<Stream>())
+            using (var ms = new MemoryStream())
+            {
+                bodyStream.CopyTo(ms);
+
+                _body = ms.ToArray();
+            }
         }
 
         protected override ContentType GetContentType()

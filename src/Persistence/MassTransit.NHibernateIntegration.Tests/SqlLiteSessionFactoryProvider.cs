@@ -14,6 +14,7 @@ namespace MassTransit.NHibernateIntegration.Tests
 {
     using System;
     using System.Data;
+    using System.Data.Common;
     using System.Data.SQLite;
     using NHibernate;
     using NHibernate.Cache;
@@ -51,8 +52,7 @@ namespace MassTransit.NHibernateIntegration.Tests
         {
             Configuration.SetProperty(NHibernate.Cfg.Environment.UseSecondLevelCache, "true");
             Configuration.SetProperty(NHibernate.Cfg.Environment.UseQueryCache, "true");
-            Configuration.SetProperty(NHibernate.Cfg.Environment.CacheProvider,
-                typeof(HashtableCacheProvider).AssemblyQualifiedName);
+            Configuration.SetProperty(NHibernate.Cfg.Environment.CacheProvider, typeof(HashtableCacheProvider).AssemblyQualifiedName);
         }
 
         public void Dispose()
@@ -70,6 +70,7 @@ namespace MassTransit.NHibernateIntegration.Tests
         {
             if (_disposed)
                 return;
+
             if (disposing)
             {
                 if (_openConnection != null)
@@ -91,14 +92,14 @@ namespace MassTransit.NHibernateIntegration.Tests
             BuildSchema(Configuration, _openConnection);
 
             _innerSessionFactory = base.GetSessionFactory();
-            _innerSessionFactory.OpenSession(_openConnection);
+            _innerSessionFactory.WithOptions().Connection(_openConnection).OpenSession();
 
             _sessionFactory = new SingleConnectionSessionFactory(_innerSessionFactory, _openConnection);
 
             return _sessionFactory;
         }
 
-        static void BuildSchema(Configuration config, IDbConnection connection)
+        static void BuildSchema(Configuration config, DbConnection connection)
         {
             new SchemaExport(config).Execute(true, true, false, connection, null);
         }

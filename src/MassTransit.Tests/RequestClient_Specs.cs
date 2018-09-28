@@ -62,7 +62,6 @@ namespace MassTransit.Tests
             Assert.That(async () => await _response, Throws.TypeOf<RequestTimeoutException>());
         }
 
-        Task<ConsumeContext<PingMessage>> _ping;
         Task<PongMessage> _response;
         IRequestClient<PingMessage, PongMessage> _requestClient;
 
@@ -107,14 +106,15 @@ namespace MassTransit.Tests
         }
     }
 
+
     [TestFixture]
     public class Cancelling_a_request_mid_stream :
-    InMemoryTestFixture
+        InMemoryTestFixture
     {
         [Test]
         public async Task Should_throw_a_cancelled_exception()
         {
-            Assert.That(async () =>  await _response, Throws.TypeOf<TaskCanceledException>());
+            Assert.That(async () => await _response, Throws.TypeOf<TaskCanceledException>());
         }
 
         Task<ConsumeContext<PingMessage>> _ping;
@@ -146,5 +146,4 @@ namespace MassTransit.Tests
             });
         }
     }
-
 }

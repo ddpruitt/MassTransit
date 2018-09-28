@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -14,8 +14,8 @@ namespace MassTransit.HttpTransport.Contexts
 {
     using System.IO;
     using System.Net.Http;
-    using Context;
     using Hosting;
+    using MassTransit.Context;
 
 
     public class HttpClientReceiveContext :
@@ -23,10 +23,11 @@ namespace MassTransit.HttpTransport.Contexts
     {
         readonly HttpResponseMessage _responseMessage;
         readonly Stream _responseStream;
+        byte[] _body;
 
         public HttpClientReceiveContext(HttpResponseMessage responseMessage, Stream responseStream, bool redelivered, IReceiveObserver receiveObserver,
-            ISendEndpointProvider sendEndpointProvider, IPublishEndpointProvider publishEndpointProvider)
-            : base(responseMessage.RequestMessage.RequestUri, redelivered, receiveObserver, sendEndpointProvider, publishEndpointProvider)
+            ReceiveEndpointContext topology)
+            : base(responseMessage.RequestMessage.RequestUri, redelivered, receiveObserver, topology)
         {
             _responseMessage = responseMessage;
             _responseStream = responseStream;
@@ -38,9 +39,30 @@ namespace MassTransit.HttpTransport.Contexts
 
         public HttpResponseMessage ResponseMessage => _responseMessage;
 
-        protected override Stream GetBodyStream()
+        public override byte[] GetBody()
         {
-            return _responseStream;
+            if (_body == null)
+                GetBodyAsByteArray();
+
+            return _body;
+        }
+
+        public override Stream GetBodyStream()
+        {
+            if (_body == null)
+                GetBodyAsByteArray();
+
+            return new MemoryStream(_body, false);
+        }
+
+        void GetBodyAsByteArray()
+        {
+            using (var ms = new MemoryStream())
+            {
+                _responseStream.CopyTo(ms);
+
+                _body = ms.ToArray();
+            }
         }
     }
 }

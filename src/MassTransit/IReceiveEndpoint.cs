@@ -12,6 +12,7 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit
 {
+    using Context;
     using GreenPipes;
     using Pipeline;
     using Transports;
@@ -21,19 +22,16 @@ namespace MassTransit
     /// A service endpoint has a inbound transport that pushes messages to consumers
     /// </summary>
     public interface IReceiveEndpoint :
+        ISendEndpointProvider,
+        IPublishEndpointProvider,
         IConsumePipeConnector,
         IRequestPipeConnector,
         IReceiveObserverConnector,
         IReceiveEndpointObserverConnector,
         IConsumeObserverConnector,
         IConsumeMessageObserverConnector,
-        IPublishObserverConnector,
         IProbeSite
     {
-        /// <summary>
-        /// Starts recieving from the inbound transport.
-        /// </summary>
-        /// <returns>A handle to the receiving endpoint, which is used to stop it</returns>
-        ReceiveEndpointHandle Start();
+        ReceiveEndpointContext Context { get; }
     }
 }

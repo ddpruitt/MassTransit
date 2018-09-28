@@ -13,13 +13,14 @@
 namespace MassTransit.AzureServiceBusTransport.Hosting
 {
     using System;
-    using Configuration;
+    using System.Net.Mime;
     using ConsumeConfigurators;
     using GreenPipes;
     using MassTransit.Builders;
     using MassTransit.Hosting;
     using MassTransit.Saga;
-    using MassTransit.Saga.SubscriptionConfigurators;
+    using MassTransit.Topology;
+    using SagaConfigurators;
 
 
     /// <summary>
@@ -59,9 +60,56 @@ namespace MassTransit.AzureServiceBusTransport.Hosting
             _configurator.AddPipeSpecification(specification);
         }
 
+        public void AddPrePipeSpecification(IPipeSpecification<ConsumeContext> specification)
+        {
+            _configurator.AddPrePipeSpecification(specification);
+        }
+
+        public ConnectHandle ConnectBusObserver(IBusObserver observer)
+        {
+            return _configurator.ConnectBusObserver(observer);
+        }
+
+        public IMessageTopologyConfigurator MessageTopology => _configurator.MessageTopology;
+        public ISendTopologyConfigurator SendTopology => _configurator.SendTopology;
+        public IPublishTopologyConfigurator PublishTopology => _configurator.PublishTopology;
+
+        public bool DeployTopologyOnly
+        {
+            set => _configurator.DeployTopologyOnly = value;
+        }
+
         public void AddBusFactorySpecification(IBusFactorySpecification specification)
         {
             _configurator.AddBusFactorySpecification(specification);
+        }
+
+        public void Message<T>(Action<IMessageTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            _configurator.Message(configureTopology);
+        }
+
+        public void Send<T>(Action<IMessageSendTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            ((IBusFactoryConfigurator)_configurator).Send(configureTopology);
+        }
+
+        public void Publish<T>(Action<IMessagePublishTopologyConfigurator<T>> configureTopology)
+            where T : class
+        {
+            ((IBusFactoryConfigurator)_configurator).Publish(configureTopology);
+        }
+
+        public void SetMessageSerializer(SerializerFactory serializerFactory)
+        {
+            _configurator.SetMessageSerializer(serializerFactory);
+        }
+
+        public void AddMessageDeserializer(ContentType contentType, DeserializerFactory deserializerFactory)
+        {
+            _configurator.AddMessageDeserializer(contentType, deserializerFactory);
         }
 
         public void ReceiveEndpoint(string queueName, Action<IReceiveEndpointConfigurator> configureEndpoint)
@@ -99,14 +147,28 @@ namespace MassTransit.AzureServiceBusTransport.Hosting
             return _configurator.ConnectSagaConfigurationObserver(observer);
         }
 
-        public void SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator) where TSaga : class, ISaga
+        public void SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator)
+            where TSaga : class, ISaga
         {
             _configurator.SagaConfigured(configurator);
         }
 
-        public void SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator) where TSaga : class, ISaga where TMessage : class
+        public void SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator)
+            where TSaga : class, ISaga
+            where TMessage : class
         {
             _configurator.SagaMessageConfigured(configurator);
+        }
+
+        public ConnectHandle ConnectHandlerConfigurationObserver(IHandlerConfigurationObserver observer)
+        {
+            return _configurator.ConnectHandlerConfigurationObserver(observer);
+        }
+
+        public void HandlerConfigured<TMessage>(IHandlerConfigurator<TMessage> configurator)
+            where TMessage : class
+        {
+            _configurator.HandlerConfigured(configurator);
         }
     }
 }

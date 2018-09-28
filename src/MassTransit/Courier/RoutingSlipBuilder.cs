@@ -30,7 +30,7 @@ namespace MassTransit.Courier
         ItineraryBuilder,
         IRoutingSlipSendEndpointTarget
     {
-        public static readonly IDictionary<string, object> NoArguments = new Dictionary<string, object>(StringComparer.InvariantCultureIgnoreCase);
+        public static readonly IDictionary<string, object> NoArguments = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
         readonly IList<ActivityException> _activityExceptions;
         readonly IList<ActivityLog> _activityLogs;
@@ -52,7 +52,7 @@ namespace MassTransit.Courier
             _activityLogs = new List<ActivityLog>();
             _activityExceptions = new List<ActivityException>();
             _compensateLogs = new List<CompensateLog>();
-            _variables = new Dictionary<string, object>(StringComparer.InvariantCultureIgnoreCase);
+            _variables = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             _subscriptions = new List<Subscription>();
         }
 
@@ -64,7 +64,7 @@ namespace MassTransit.Courier
             _activityLogs = new List<ActivityLog>(routingSlip.ActivityLogs);
             _compensateLogs = new List<CompensateLog>(routingSlip.CompensateLogs);
             _activityExceptions = new List<ActivityException>(routingSlip.ActivityExceptions);
-            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.InvariantCultureIgnoreCase);
+            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.OrdinalIgnoreCase);
             _subscriptions = new List<Subscription>(routingSlip.Subscriptions);
 
             _sourceItinerary = new List<Activity>();
@@ -78,7 +78,7 @@ namespace MassTransit.Courier
             _activityLogs = new List<ActivityLog>(routingSlip.ActivityLogs);
             _compensateLogs = new List<CompensateLog>(routingSlip.CompensateLogs);
             _activityExceptions = new List<ActivityException>(routingSlip.ActivityExceptions);
-            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.InvariantCultureIgnoreCase);
+            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.OrdinalIgnoreCase);
             _subscriptions = new List<Subscription>(routingSlip.Subscriptions);
 
             _sourceItinerary = new List<Activity>(sourceItinerary);
@@ -92,7 +92,7 @@ namespace MassTransit.Courier
             _activityLogs = new List<ActivityLog>(routingSlip.ActivityLogs);
             _compensateLogs = new List<CompensateLog>(compensateLogs);
             _activityExceptions = new List<ActivityException>(routingSlip.ActivityExceptions);
-            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.InvariantCultureIgnoreCase);
+            _variables = new Dictionary<string, object>(routingSlip.Variables, StringComparer.OrdinalIgnoreCase);
             _subscriptions = new List<Subscription>(routingSlip.Subscriptions);
 
             _sourceItinerary = new List<Activity>();
@@ -201,7 +201,7 @@ namespace MassTransit.Courier
             if (key == null)
                 throw new ArgumentNullException(nameof(key));
 
-            if (value == null || (value is string && string.IsNullOrEmpty((string)value)))
+            if (value == null || (value is string s && string.IsNullOrEmpty(s)))
                 _variables.Remove(key);
             else
                 _variables[key] = value;
@@ -400,7 +400,7 @@ namespace MassTransit.Courier
         {
             foreach (KeyValuePair<string, object> value in values)
             {
-                if (value.Value == null || (value.Value is string && string.IsNullOrEmpty((string)value.Value)))
+                if (value.Value == null || (value.Value is string s && string.IsNullOrEmpty(s)))
                     _variables.Remove(value.Key);
                 else
                     _variables[value.Key] = value.Value;

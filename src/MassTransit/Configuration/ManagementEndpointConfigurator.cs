@@ -1,4 +1,4 @@
-// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,11 +13,10 @@
 namespace MassTransit
 {
     using System;
-    using Configuration;
+    using System.Net.Mime;
     using ConsumeConfigurators;
     using GreenPipes;
-    using Saga;
-    using Saga.SubscriptionConfigurators;
+    using SagaConfigurators;
 
 
     /// <summary>
@@ -45,6 +44,11 @@ namespace MassTransit
             _configurator.AddPipeSpecification(specification);
         }
 
+        void IConsumePipeConfigurator.AddPrePipeSpecification(IPipeSpecification<ConsumeContext> specification)
+        {
+            _configurator.AddPrePipeSpecification(specification);
+        }
+
         ConnectHandle IConsumerConfigurationObserverConnector.ConnectConsumerConfigurationObserver(IConsumerConfigurationObserver observer)
         {
             return _configurator.ConnectConsumerConfigurationObserver(observer);
@@ -53,6 +57,16 @@ namespace MassTransit
         void IReceiveEndpointConfigurator.AddEndpointSpecification(IReceiveEndpointSpecification configurator)
         {
             _configurator.AddEndpointSpecification(configurator);
+        }
+
+        void IReceiveEndpointConfigurator.SetMessageSerializer(SerializerFactory serializerFactory)
+        {
+            _configurator.SetMessageSerializer(serializerFactory);
+        }
+
+        void IReceiveEndpointConfigurator.AddMessageDeserializer(ContentType contentType, DeserializerFactory deserializerFactory)
+        {
+            _configurator.AddMessageDeserializer(contentType, deserializerFactory);
         }
 
         Uri IReceiveEndpointConfigurator.InputAddress => _configurator.InputAddress;
@@ -77,19 +91,29 @@ namespace MassTransit
             _configurator.ConsumerMessageConfigured(configurator);
         }
 
-        public ConnectHandle ConnectSagaConfigurationObserver(ISagaConfigurationObserver observer)
+        ConnectHandle ISagaConfigurationObserverConnector.ConnectSagaConfigurationObserver(ISagaConfigurationObserver observer)
         {
             return _configurator.ConnectSagaConfigurationObserver(observer);
         }
 
-        public void SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator) where TSaga : class, ISaga
+        void ISagaConfigurationObserver.SagaConfigured<TSaga>(ISagaConfigurator<TSaga> configurator)
         {
             _configurator.SagaConfigured(configurator);
         }
 
-        public void SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator) where TSaga : class, ISaga where TMessage : class
+        void ISagaConfigurationObserver.SagaMessageConfigured<TSaga, TMessage>(ISagaMessageConfigurator<TSaga, TMessage> configurator)
         {
             _configurator.SagaMessageConfigured(configurator);
+        }
+
+        ConnectHandle IHandlerConfigurationObserverConnector.ConnectHandlerConfigurationObserver(IHandlerConfigurationObserver observer)
+        {
+            return _configurator.ConnectHandlerConfigurationObserver(observer);
+        }
+
+        void IHandlerConfigurationObserver.HandlerConfigured<TMessage>(IHandlerConfigurator<TMessage> configurator)
+        {
+            _configurator.HandlerConfigured(configurator);
         }
     }
 }

@@ -14,11 +14,10 @@ namespace MassTransit.Tests
 {
     using System;
     using System.Linq;
-    using GreenPipes;
+    using System.Threading.Tasks;
     using MassTransit.Testing;
     using MassTransit.Testing.MessageObservers;
     using NUnit.Framework;
-    using Shouldly;
     using TestFramework;
     using TestFramework.Messages;
 
@@ -28,49 +27,69 @@ namespace MassTransit.Tests
         InMemoryTestFixture
     {
         [Test]
-        public void Should_distinguish_multiple_events()
+        public async Task Should_distinguish_multiple_events()
         {
             var consumer = new PingPongConsumer(TestTimeout);
 
-            using (ConnectHandle handle = consumer.Connect(Bus))
+            var handle = Host.ConnectReceiveEndpoint("boring", x => consumer.Configure(x));
+            await handle.Ready;
+            try
             {
                 var pingMessage = new PingMessage();
                 var pingMessage2 = new PingMessage();
-                Bus.Publish(pingMessage);
-                Bus.Publish(pingMessage2);
+                await Bus.Publish(pingMessage);
+                await Bus.Publish(pingMessage2);
 
-                consumer.Received.Select<PingMessage>(received => received.Context.Message.CorrelationId == pingMessage.CorrelationId).Any().ShouldBe(true);
-                consumer.Received.Select<PingMessage>(received => received.Context.Message.CorrelationId == pingMessage2.CorrelationId).Any().ShouldBe(true);
+                Assert.IsTrue(consumer.Received.Select<PingMessage>(received => received.Context.Message.CorrelationId == pingMessage.CorrelationId).Any());
+                Assert.IsTrue(consumer.Received.Select<PingMessage>(received => received.Context.Message.CorrelationId == pingMessage2.CorrelationId).Any());
+            }
+            finally
+            {
+                await handle.StopAsync();
             }
         }
 
         [Test]
-        public void Should_show_that_the_message_was_received_by_the_consumer()
+        public async Task Should_show_that_the_message_was_received_by_the_consumer()
         {
             var multiConsumer = new MultiTestConsumer(TestTimeout);
             ReceivedMessageList<PingMessage> received = multiConsumer.Consume<PingMessage>();
 
-            using (ConnectHandle handle = multiConsumer.Connect(Bus))
-            {
-                Bus.Publish(new PingMessage());
+            var handle = Host.ConnectReceiveEndpoint("boring2", x => multiConsumer.Configure(x));
+            await handle.Ready;
 
-                received.Select().Any().ShouldBe(true);
+            try
+            {
+                await Bus.Publish(new PingMessage());
+
+                Assert.IsTrue(received.Select().Any());
+            }
+            finally
+            {
+                await handle.StopAsync();
             }
         }
 
         [Test]
-        public void Should_show_that_the_specified_type_was_received()
+        public async Task Should_show_that_the_specified_type_was_received()
         {
             var consumer = new PingPongConsumer(TestTimeout);
 
-            using (ConnectHandle handle = consumer.Connect(Bus))
+            var handle = Host.ConnectReceiveEndpoint("boring3", x => consumer.Configure(x));
+            await handle.Ready;
+
+            try
             {
                 var pingMessage = new PingMessage();
-                Bus.Publish(pingMessage);
-                Bus.Publish(new PongMessage(pingMessage.CorrelationId));
+                await Bus.Publish(pingMessage);
+                await Bus.Publish(new PongMessage(pingMessage.CorrelationId));
 
-                consumer.Received.Select<PingMessage>().Any().ShouldBe(true);
-                consumer.Received.Select<PongMessage>(received => received.Context.Message.CorrelationId == pingMessage.CorrelationId).Any().ShouldBe(true);
+                Assert.IsTrue(consumer.Received.Select<PingMessage>().Any());
+                Assert.IsTrue(consumer.Received.Select<PongMessage>(received => received.Context.Message.CorrelationId == pingMessage.CorrelationId).Any());
+            }
+            finally
+            {
+                await handle.StopAsync();
             }
         }
 

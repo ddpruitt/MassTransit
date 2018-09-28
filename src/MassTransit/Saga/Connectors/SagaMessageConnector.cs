@@ -13,9 +13,9 @@
 namespace MassTransit.Saga.Connectors
 {
     using System;
-    using Configuration;
     using GreenPipes;
     using MassTransit.Pipeline;
+    using SagaSpecifications;
 
 
     public abstract class SagaMessageConnector<TSaga, TMessage> :
@@ -41,9 +41,9 @@ namespace MassTransit.Saga.Connectors
         {
             ISagaMessageSpecification<TSaga, TMessage> messageSpecification = specification.GetMessageSpecification<TMessage>();
 
-            IPipe<SagaConsumeContext<TSaga, TMessage>> consumerPipe = messageSpecification.Build(_consumeFilter);
+            IPipe<SagaConsumeContext<TSaga, TMessage>> consumerPipe = messageSpecification.BuildConsumerPipe(_consumeFilter);
 
-            IPipe<ConsumeContext<TMessage>> messagePipe = Pipe.New<ConsumeContext<TMessage>>(x =>
+            IPipe<ConsumeContext<TMessage>> messagePipe = messageSpecification.BuildMessagePipe(x =>
             {
                 ConfigureMessagePipe(x, repository, consumerPipe);
             });

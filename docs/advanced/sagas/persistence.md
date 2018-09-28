@@ -4,8 +4,6 @@ Sagas are stateful event-based message consumers -- they retain state. Therefore
 events is important. Without persistent state, a saga would consider each event a new event, and orchestration 
 of subsequent events would be meaningless.
 
-<!-- TOC depthFrom:2 -->
-
 - [Specifying saga persistence](#specifying-saga-persistence)
 - [Identity](#identity)
 - [Publishing and Sending From Sagas](#publishing-and-sending-from-sagas)
@@ -15,9 +13,8 @@ of subsequent events would be meaningless.
     - [NHibernate](#nhibernate)
     - [Redis](#redis)
     - [Marten](#marten)
+    - [DocumentDb](#documentdb)
     - [Azure Service Bus](#azure-service-bus)
-
-<!-- /TOC -->
 
 ## Specifying saga persistence
 
@@ -122,23 +119,50 @@ Each of these are setup in a similar way, but examples are shown below for each 
 * [MondoDB](#mongodb)
 * [Redis](#redis)
 * [Marten](#marten)
+* [DocumentDb](#documentdb)
 * [Azure Service Bus](#azure-service-bus)
+* [Dapper](#dapper)
+
+### Optimistic vs pessimistic concurrency
+
+Most persistence mechanisms for sagas supported by MassTransit need some way to guarantee ACID when processing sagas. 
+Because there can be multiple threads _consuming_ multiple bus events meant for the same saga instance, 
+they could end up overwriting each other (race condition). 
+
+Relational databases can easily handle this by setting the transaction type to *serializable* or (page/row) locking. 
+This would be considered as _pessimistic concurrency_.
+
+Another way to handle concurrency is to have some attribute like version or timestamp, which updates
+every time a saga is persisted. By doing that we can instruct the database only to update the
+record if this attribute matches between what we are trying to persist and what is stored in the 
+database record we are trying to update.
+
+This is type of concurrency is called an _optimistic concurrency_. 
+It doesn't guarantee your unit of work with the database will succeed (must retry after these exceptions), 
+but it also doesn't block anybody else from working within the same database page (not locking the table/page).
+
+#### So, which one should I use?
+
+For almost every scenario, it is recommended using the optimistic concurrency, because most state machine 
+logic should be fairly quick. 
+
+If the chosen persistence method supports optimistic concurrency, race conditions can be handled rather
+easily by specifying a retry policy for concurrency exceptions or using generic retry policy.
 
 ### Entity Framework
 
 Entity Framework seems to be the most common ORM for class-SQL mappings, and SQL is still widely used 
 for storing data. So it's a win to have it supported out of the box by MassTransit.
 
-#### Optimistic vs Pessimistic Concurrency
-Most Relational Databases baked into MassTransit need some way to guarantee ACID when processing Sagas. Because there can be multiple threads _consuming_ multiple bus events meant for the same Saga Instance, they could end up overwriting eachother (Race Condition). Fortunately Relational DB's can easily handle this by setting the transaction type to Serializable or (Page/Row) locking. This would be considered __pessimistic concurrency__.
+#### Concurrency handling
+Fortunately, Entity Framework is a repository pattern itself, and has a column type `[Timestamp]` 
+(a.k.a. `IsRowVersion` with fluent mapping), which will check the value of the column when it starts it's 
+"unit of work" and if that value is the same when updating that row in the database - everybody is happy! 
+But, if that column value is different, then it has been updated elsewhere. 
+So, the Entity Framework will throw a `DbUpdateConcurrencyException`, which can be handled by a retry policy
+to fix the concurrency violation.
 
-Fortunately Entity Framework is a Repository pattern itself, and they have baked in a Column Type `[Timestamp]` (a.k.a. `IsRowVersion` with fluent mapping) which will check the value of the column when it started it's "unit of work" and if that value is the same when updating that row in the database, everybody is happy!. But if that column value is different, then it was updated elsewhere. So EF will throw an exception `DbUpdateConcurrencyException`. This is __optimistic concurrency_. It doesn't guarantee your unit of work with the database will succeed (must retry these exceptions), but it also doesn't block anybody else from working within the same database page (not locking the table/page).
-
-##### So Which one should I use?
-
-For almost every scenario, I've used optimistic, because most state machine logic should be fairly quick. So
-for most scenarios, optimistic concurrency should be fine, but you can choose what's the most appropriate for you.
-
+#### Configuration and usage
 The code-first mapping example below shows the basics of getting started. The lines have been commented
 where the additional optimistic concurrency column is needed.
 
@@ -176,39 +200,50 @@ public class SagaInstanceMap : SagaClassMapping<SagaInstance>
 > If you use your own mapping, you must follow the same convention, otherwise there is a big chance to
 > get deadlock exceptions in case of high throughput.
 
-The repository is then created on the context factory for the `DbContext` is available.
-
+The repository is then created on the context factory:
 ```csharp
 SagaDbContextFactory contextFactory = () => 
     new SagaDbContext<SagaInstance, SagaInstanceMap>(_connectionString);
 
-var repository = new EntityFrameworkSagaRepository<SagaInstance>(contextFactory, optimistic: true); // true For Optimistic Concurrency, false is default for pessimistic
+var repository = new EntityFrameworkSagaRepository<SagaInstance>(
+    contextFactory, optimistic: true); // true For Optimistic Concurrency, false is default for pessimistic
 ```
 
-Lastly, this snippit below is __only needed for optimistic concurrency__, because the saga should retry processing
-if a failure occurred when writing to the database. This snippit is adding a [retry policies](retries.md) middleware to the
+Lastly, the snippet below is _only needed for optimistic concurrency_, because the saga 
+should retry processing if failure occurred when writing to the database. 
+This snippet is adding [retry policies](../../usage/retries.md) middleware to the
 saga receive endpoint from the [first section](#specifying-saga-persistence).
 
 ```csharp
-    ...
-    x.ReceiveEndpoint(host, "shopping_cart_state", e =>
-    {
-        e.UseRetry(x => {
+x.ReceiveEndpoint(host, "shopping_cart_state", e =>
+{
+    e.UseRetry(x => 
+        {
             x.Handle<DbUpdateConcurrencyException>();
             x.Interval(5, TimeSpan.FromMilliseconds(100)));
-        }); // Add Retry Middleware for Optimistic Concurrency
-        e.StateMachineSaga(sagaStateMachine, repository);
-    });
-    ...
+        }); // Add the retry middleware for optimistic concurrency
+    e.StateMachineSaga(sagaStateMachine, repository);
+});
 ```
+
+Hence, that if you have retry policy without an exception filter, it will also handle
+the concurrency exception, so explicit configuration is not required in this case.
 
 ### MongoDB
 
 MongoDB is an easy to use saga repository, because setup is easy. There is no need for class mapping, 
 the saga instances can be persisted easily using a MongoDB collection.
 
+#### Concurrency
+
+MongoDb saga persistence requires that saga instance classes implement `IVersionedSaga` interface.
+This interface has a `Version` property, which allows the saga persistence to handle optimistic
+concurrency.
+
+#### Configuration and usage
+
 ```csharp
-public class SagaInstance : SagaStateMachineInstance
+public class SagaInstance : SagaStateMachineInstance, IVersionedSaga
 {
     public SagaInstance(Guid correlationId)
     {
@@ -220,6 +255,7 @@ public class SagaInstance : SagaStateMachineInstance
     public string CurrentState { get; set; }
     public string ServiceName { get; set; }
     public Guid CorrelationId { get; set; }
+    public int Version { get; set; }
 }
 ```
 
@@ -234,9 +270,16 @@ Each saga instance will be placed in a collection specific to the instance type.
 
 ### NHibernate
 
-Although NHibernate is not being actively developed recently, it is still widely used and 
-is supported by MassTransit for saga storage. The example below shows the code-first approach 
-to using NHibernate for saga persistence.
+NHibernate is a widely used ORM and it is supported by MassTransit for saga storage. 
+The example below shows the code-first approach to using NHibernate for saga persistence.
+
+#### Concurrency
+
+NHibernate natively supports multiple concurrency handling mechanisms.
+The easiest is probably adding a `Version` property of type `int` to the saga instance class
+and map it to the column with the same name. NHibernate will use it by default.
+
+#### Configuration and usage
 
 ```csharp
 public class SagaInstance : SagaStateMachineInstance
@@ -251,6 +294,7 @@ public class SagaInstance : SagaStateMachineInstance
     public string CurrentState { get; set; }
     public string ServiceName { get; set; }
     public Guid CorrelationId { get; set; }
+    public int Version { get; set; } // for optimistic concurrency
 }
 
 public class SagaInstanceMap : SagaClassMapping<SagaInstance>
@@ -259,6 +303,7 @@ public class SagaInstanceMap : SagaClassMapping<SagaInstance>
     {
         Property(x => x.CurrentState);
         Property(x => x.ServiceName, x => x.Length(40));
+        Property(x => x.Version); // for optimistic concurrency
     }
 }
 ```
@@ -285,64 +330,61 @@ Redis is a very popular key-value store, which is known for being very fast.
 Redis does not support queries, therefore Redis saga persistence only supports correlation by id. 
 If you try to use correlation by expressions, you will get a "not implemented" exception.
 
-Saga persistence for Redis uses `ServiceStack.Redis` library and it support both BSD-licensed v3.9.71 
-and the latest commercial versions as well.
+Saga persistence for Redis uses `StackExchange.Redis` library.
 
-Saga instance class must implement `IHasGuid` interface and the `Id` property, that must return the 
-value of the `CorrelationId` property:
 
-```csharp
-public class SagaInstance : 
-    SagaStateMachineInstance, IHasGuidId
-{
-    public Guid CorrelationId { get; set; }
-    public Guid Id => CorrelationId;
-    public string CurrentState { get; set; }
+#### Redis client initialization
 
-    public string CustomData { get; set; }
-}
-```
-
-Redis saga persistence does not aquire locking on the database record when writing it so potentially 
-you can have write conflict in case the saga is updating its state frequently (hundreds of times per second). 
-To resolve this, the saga instance can implement the `IVersionedSaga` inteface and include the Version property:
-
-```csharp
-public int Version { get; set; }
-```
-
-When version of the instance that is being updated will be lower than the expected version, 
-the saga repository will trow an exception and force the message to be retried, potentially resolving the issue.
-
-The Redis saga repository requires `ServiceStack.Redis.IRedisClientsManager` as constructor parameter. 
+Redis saga repository is based on the popular `StackExchange.Redis` package and therefore requires `StackExchange.Redis.IDatabase` factory function as constructor parameter. 
 For containerless initialization the code would look like:
 
 ```csharp
 var redisConnectionString = "redis://localhost:6379";
-var repository = new RedisSagaRepository<SagaInstance>(
-    new RedisManagerPool(redisConnectionString));
+var redis = ConnectionMultiplexer.Connect(redisConnectionString);
+
+var repository = new RedisSagaRepository<SagaInstance>(() => redis.GetDatabase());
 ```
 
 If you use a container, you can use the code like this (example for Autofac):
 
 ```csharp
 var redisConnectionString = "redis://localhost:6379";
-builder.Register<IRedisClientsManager>(c => 
-    new RedisManagerPool(redisConnectionString)).SingleInstance();
+builder.RegisterInstance(ConnectionMultiplexer.Connect(redisConnectionString))
+    .As<IConnectionMultiplexer>();
+builder.Register<IDatabase>(c => c.Resolve<IConnectionMultiplexer>.GetDatabase());
 builder.RegisterGeneric(typeof(RedisSagaRepository<>))
     .As(typeof(ISagaRepository<>)).SingleInstance();
 ```
 
+#### Concurrency
+
+Redis persistence supports optimistic and pessimistic concurrency. The default mode is optomistic concurrency.
+
+In optimistic concurrency mode, Redis saga persistence does not acquire locking on the database record when writing it so potentially you can have write conflict in case the saga is updating its state frequently (hundreds of times per second). 
+To resolve this, the saga instance can implement the `IVersionedSaga` interface and include the Version property:
+
+```csharp
+public int Version { get; set; }
+```
+
+When the version of the instance that is being updated is lower than the expected version, 
+the saga repository will trow an exception and force the message to be retried, potentially resolving the issue.
+
+Pessimistic concurrency can be used by specifying `optimistic: false` parameter in the repository
+constructor. It will instruct the repository to use Redis lock mechanism. During the message processing,
+saga instance in Redis will be locked and any concurrent attempts to execute any processing on the same
+instance will fail.
+
 ### Marten
 
 [Marten][2] is an open-source library that provides an API to the PostgreSQL [JSONB storage][1], influenced by
-RavenDb client API. It allows to use PotgreSQL as schema-less NoSQL document storage. Unlike typical document
+RavenDb client API. It allows to use PostgreSQL as schema-less NoSQL document storage. Unlike typical document
 databases, PostgreSQL JSONB storage provides you the ACID-compliant transactional store with full consistency.
 
 To use Marten and PostgreSQL as saga persistence, you need to install `MassTransit.Marten` NuGet package and
 add some code.
 
-First, your saga state class needs to mark the correlationId property with the `[Identity]` arrtibute. By this
+First, your saga state class needs to mark the correlationId property with the `[Identity]` attribute. By this
 you inform Marten that correlationId will be used as the primary key.
 
 ```csharp
@@ -355,8 +397,7 @@ public class SampleSaga : ISaga
 }
 ```
 
-Then you need to initialize the document store and the repository. Repository needs the store as its constructor
-parameter.
+Then you need to initialize the document store and the repository. Repository needs the store as its constructor parameter.
 
 ```csharp
 var connectionString =
@@ -375,8 +416,113 @@ builder.RegisterGeneric(typeof(MartenSagaRepository<>))
     .As(typeof(ISagaRepository<>)).SingleInstance();
 ```
 
-Marten will create necessary tables for you. This type of saga repository
+Marten will create the necessary tables for you. This type of saga repository
 supports correlation by id and custom expressions.
+
+#### Concurrency
+
+Marten supports optimistic concurrency by using an eTag-like version field in the metadata.
+This means that the saga instance class does not need any additional fields for version.
+
+There are two ways to use this feature:
+
+1) Apply `[UseOptimisticConcurrency]` attribute to the saga instance class
+
+```csharp
+[UseOptimisticConcurrency]
+public class SampleSaga : ISaga
+{
+    [Identity]
+    public Guid CorrelationId { get; set; }
+    ...
+}
+```
+
+2. Configure the store to use optimistic concurrency for your saga instance class
+
+ ```csharp 
+ var store = DocumentStore.For(_ =>
+ {
+     // Adds optimistic concurrency checking to Issue
+     _.Schema.For<SampleSaga>().UseOptimisticConcurrency(true);
+ });
+ ```
+
+### DocumentDb
+
+DocumentDb is the precessor of Azure CosmosDb and the DocumentDb API is still one of the main APIs for the NoSQL document-oriented persistence of CosmosDb. MassTransit supports saga persistence in CosmosDb by using both MongoDb API (using `MassTransit.MongoDb` package) and using DocumentDb API (using `MassTransit.DocumentDb` package).
+
+DocumentDb requires that any document stored there has a property called `id`, to be used as the document identity. Saga instances have `CorrelationId` for the same purpose, so there are two ways to create your DocumentDb saga class, which can have different implications depending on your usage. ETag must also be present, which is used for optimistic concurrency. Please never set this property yourself, it managed 100% by document db.
+
+#### First, the simple (out of box) functionality. Create your saga class:
+
+```csharp
+public class SampleSaga : IVersionedSaga
+{
+    public Guid CorrelationId { get; set; }
+    public string ETag { get; set; }
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, you explicitly pass in the settings
+var repository = new DocumentDbSagaRepository<SampleSaga>(documentDbClient, "sagaDatabase", JsonSerializerSettingsExtensions.GetSagaRenameSettings<SimpleSaga>());
+```
+
+The only restriction with this method is you might run into trouble if you are using Correlation Expressions that use the CorrelationId property. This is because when passing these expressions into DocumentDb's Create Query, it must have the `[JsonProperty("id")]` attribute instead of using the `JsonSerializerSettingsExtensions.GetSagaRenameSettings<...>()` rename.
+
+#### So the second option for your saga class declaration is:
+
+```csharp
+public class SampleSaga : IVersionedSaga
+{
+    [JsonProperty("id")]
+    public Guid CorrelationId { get; set; }
+    [JsonProperty("_etag")]
+    public string ETag { get; set; }
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, just follow the example below, no need to use the GetSagaRenameSettings<>()
+```
+
+And optionally, you can make your Saga inherit from the Azure DocumentDb class `Resource`, because.. well why not? It's saving to that store, so you might as well have all the properties there anyways.
+
+#### Third option for saga class declaration:
+
+```csharp
+public class SampleSaga : IVersionedSaga, Resource
+{
+    [JsonProperty("id")] // This overrides the Resource [JsonProperty("id")], which exists on the Resource classes Id property. This means Id will be a null guid, so just always use CorrelationId instead
+    public Guid CorrelationId { get; set; }
+    // The Resource class has the [JsonProperty("_etag")] public string ETag {get;set;}, so we don't need to declare it here
+    public string State { get; set; }
+    public string SomeProperty { get; set; }
+}
+
+// And in your bus/saga configuration, just follow the example below, no need to use the GetSagaRenameSettings<>()
+```
+
+So my preference is option 3, or option 2. Option 1 is there to offer an option as backwards compatibility to existing functionality.
+
+Instantiation of the DocumentDb saga repository could be done like this:
+
+```csharp
+var documentDbClient =  new DocumentClient(endpointUri, authKeyString);
+var repository = new DocumentDbSagaRepository<SampleSaga>(documentDbClient, "sagaDatabase");
+```
+
+If you use a container, you can use the code like this (example for Autofac):
+
+```csharp
+builder.RegisterInstance(new DocumentClient(endpointUri, authKeyString))
+    .As<IDocumentClient>();
+builder.Register(c => 
+        new DocumentDbSagaRepository(c.Resolve<IDocumentClient>(), "sagaDatabase"))
+    .As<ISagaRepository<SampleSaga>>()
+    .SingleInstance();
+```
 
 ### Azure Service Bus
 
@@ -384,7 +530,7 @@ Azure Service Bus provides a feature called *message sessions*, to process multi
 to store some state on a temporary basis, which can be retrieved by some key.
 
 The latter give us an ability to use this feature as saga state storage. Using message sessions
-as saga persistence, you can only use Azure Service Bus for both messaging and saga persistencepurposes,
+as saga persistence, you can only use Azure Service Bus for both messaging and saga persistence purposes,
 without needing any additional infrastructure.
 
 There is a limitation for using message sessions - this feature is not supported for AMQP transport.
@@ -406,10 +552,55 @@ sbc.ReceiveEndpoint(host, "test_queue", ep =>
 
 As mentioned before, the message session allows storing and retrieving any state by some unique key.
 This means that this type of saga persistence only support correlation by id. So, similar to Redis
-saga persistence, you cannot use `CorralateBy` to specify how to find the saga instance, but only
+saga persistence, you cannot use `CorrelateBy` to specify how to find the saga instance, but only
 `CorrelateById`.
 
+### Dapper
 
+Provides persistence for MSSQL using [Dapper][3].
+
+Dapper.Contrib is used for inserts and updates. The methods are virtual, so if you'd rather write the SQL
+yourself it is supported.
+
+If you do not write your own sql, the model requires you use the `ExplicitKey` attribute for the CorrelationId. And if you have properties
+that are not available as columns, you can use the `Computed` attribute to not include them in the 
+generated SQL.
+
+```csharp
+public class SampleSaga : ISaga
+{
+    [ExplicitKey]
+    public Guid CorrelationId { get; set; }
+    public string Name { get; set; }
+    public string State { get; set; }
+
+    [Computed]
+    public Expression<Func<SimpleSaga, ObservableSagaMessage, bool>> CorrelationExpression
+    {
+        get { return (saga, message) => saga.Name == message.Name; }
+    }
+}
+```
+
+#### Limitations
+The tablename can only be the pluralized form of the class name. So `SampleSaga` would translate to table SampleSaga**s**.
+This applies even if you write your own SQL for updates and inserts.
+
+The expressions you can use for correlation is somewhat limited. These types of expressions are handled:
+```csharp
+    x => x.CorrelationId == someGuid;
+    x => x.IsDone;
+    x => x.CorrelationId == someGuid && x.IsDone;
+```
+You can use multiple `&&` in the expression.
+
+What you can not use is `||` and negations. So a bool used like this `x.IsDone` can only be handled as true and nothing else.
+
+Dapper does not yet support strong naming, though it is being [worked][4] on.
+
+Also this does not support dotnetcore yet.
 
 [1]: https://www.postgresql.org/docs/9.5/static/functions-json.html
 [2]: http://jasperfx.github.io/marten/
+[3]: https://github.com/StackExchange/Dapper
+[4]: https://github.com/StackExchange/Dapper/issues/889

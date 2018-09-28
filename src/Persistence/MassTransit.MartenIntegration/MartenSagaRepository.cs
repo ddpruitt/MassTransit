@@ -1,4 +1,16 @@
-﻿namespace MassTransit.MartenIntegration
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+//  
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+// this file except in compliance with the License. You may obtain a copy of the 
+// License at 
+// 
+//     http://www.apache.org/licenses/LICENSE-2.0 
+// 
+// Unless required by applicable law or agreed to in writing, software distributed
+// under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR 
+// CONDITIONS OF ANY KIND, either express or implied. See the License for the 
+// specific language governing permissions and limitations under the License.
+namespace MassTransit.MartenIntegration
 {
     using System;
     using System.Collections.Generic;
@@ -41,6 +53,12 @@
                 return session.Load<TSaga>(correlationId);
         }
 
+        public async Task<TSaga> GetSagaAsync(Guid correlationId)
+        {
+            using (var session = _store.QuerySession())
+                return await session.LoadAsync<TSaga>(correlationId).ConfigureAwait(false);
+        }
+
         void IProbeSite.Probe(ProbeContext context)
         {
             var scope = context.CreateScope("sagaRepository");
@@ -62,7 +80,7 @@
             {
                 TSaga instance;
                 if (policy.PreInsertInstance(context, out instance))
-                    PreInsertSagaInstance<T>(session, instance);
+                    await PreInsertSagaInstance<T>(session, instance).ConfigureAwait(false);
 
                 if (instance == null)
                     instance = session.Load<TSaga>(sagaId);
@@ -80,17 +98,18 @@
         }
 
         public async Task SendQuery<T>(SagaQueryConsumeContext<TSaga, T> context, ISagaPolicy<TSaga, T> policy,
-            IPipe<SagaConsumeContext<TSaga, T>> next) where T : class
+            IPipe<SagaConsumeContext<TSaga, T>> next)
+            where T : class
         {
-            using (var session = _store.LightweightSession())
+            using (var session = _store.DirtyTrackedSession())
             {
                 try
                 {
-                    IList<TSaga> instances = await session.Query<TSaga>()
+                    IEnumerable<TSaga> instances = await session.Query<TSaga>()
                         .Where(context.Query.FilterExpression)
                         .ToListAsync().ConfigureAwait(false);
 
-                    if (instances.Count == 0)
+                    if (!instances.Any())
                     {
                         var missingSagaPipe = new MissingPipe<T>(session, next);
                         await policy.Missing(context, missingSagaPipe).ConfigureAwait(false);
@@ -118,13 +137,13 @@
             }
         }
 
-        static bool PreInsertSagaInstance<T>(IDocumentSession session, TSaga instance)
+        static async Task<bool> PreInsertSagaInstance<T>(IDocumentSession session, TSaga instance)
         {
             var inserted = false;
             try
             {
                 session.Store(instance);
-                session.SaveChanges();
+                await session.SaveChangesAsync().ConfigureAwait(false);
                 inserted = true;
 
                 _log.DebugFormat("SAGA:{0}:{1} Insert {2}", TypeMetadataCache<TSaga>.ShortName, instance.CorrelationId,
@@ -139,6 +158,7 @@
                         TypeMetadataCache<T>.ShortName, ex.Message);
                 }
             }
+
             return inserted;
         }
 
@@ -158,10 +178,7 @@
                 await policy.Existing(sagaConsumeContext, next).ConfigureAwait(false);
 
                 if (!sagaConsumeContext.IsCompleted)
-                {
-                    session.Store(instance);
-                    session.SaveChanges();
-                }
+                    await session.SaveChangesAsync().ConfigureAwait(false);
             }
             catch (SagaException)
             {
@@ -213,7 +230,7 @@
                 if (!proxy.IsCompleted)
                 {
                     _session.Store(context.Saga);
-                    _session.SaveChanges();
+                    await _session.SaveChangesAsync().ConfigureAwait(false);
                 }
             }
         }

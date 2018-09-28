@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,63 +13,69 @@
 namespace MassTransit.AzureServiceBusTransport.Builders
 {
     using System;
-    using System.Collections.Generic;
+    using System.Linq;
+    using Configuration;
+    using Contexts;
     using GreenPipes;
     using MassTransit.Builders;
-    using MassTransit.Pipeline;
-    using Settings;
+    using Topology;
+    using Topology.Builders;
     using Transport;
-    using Transports;
 
 
     public class ServiceBusReceiveEndpointBuilder :
         ReceiveEndpointBuilder,
         IReceiveEndpointBuilder
     {
-        readonly bool _subscribeMessageTopics;
-        readonly IServiceBusHost _host;
-        readonly List<TopicSubscriptionSettings> _topicSubscriptions;
+        readonly IServiceBusReceiveEndpointConfiguration _configuration;
 
-        public ServiceBusReceiveEndpointBuilder(IConsumePipe consumePipe, IBusBuilder busBuilder,
-            bool subscribeMessageTopics, IServiceBusHost host)
-            : base(consumePipe, busBuilder)
+        public ServiceBusReceiveEndpointBuilder(IServiceBusReceiveEndpointConfiguration configuration)
+            : base(configuration)
         {
-            _subscribeMessageTopics = subscribeMessageTopics;
-            _host = host;
-            _topicSubscriptions = new List<TopicSubscriptionSettings>();
+            _configuration = configuration;
         }
 
         public override ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
         {
-            if (_subscribeMessageTopics)
-                _topicSubscriptions.AddRange(_host.MessageNameFormatter.GetTopicSubscription(typeof(T)));
+            if (_configuration.SubscribeMessageTopics)
+            {
+                var subscriptionName = GenerateSubscriptionName();
+
+                _configuration.Topology.Consume
+                    .GetMessageTopology<T>()
+                    .Subscribe(subscriptionName);
+            }
 
             return base.ConnectConsumePipe(pipe);
         }
 
-        public ISendEndpointProvider CreateSendEndpointProvider(Uri sourceAddress, params ISendPipeSpecification[] specifications)
+        public ServiceBusReceiveEndpointContext CreateReceiveEndpointContext()
         {
-            var pipe = CreateSendPipe(specifications);
+            var topologyLayout = BuildTopology(_configuration.Settings);
 
-            var provider = new ServiceBusSendEndpointProvider(MessageSerializer, sourceAddress, SendTransportProvider, pipe);
-
-            return new SendEndpointCache(provider);
+            return new ServiceBusEntityReceiveEndpointContext(_configuration, topologyLayout, ReceiveObservers, TransportObservers, EndpointObservers);
         }
 
-        public IPublishEndpointProvider CreatePublishEndpointProvider(Uri sourceAddress, params IPublishPipeSpecification[] specifications)
+        string GenerateSubscriptionName()
         {
-            var provider = new PublishSendEndpointProvider(MessageSerializer, sourceAddress, _host);
+            var subscriptionName = "{queuePath}";
 
-            var cache = new SendEndpointCache(provider);
+            var suffix = _configuration.HostAddress.AbsolutePath.Split(new[] {'/'}, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (!string.IsNullOrWhiteSpace(suffix))
+                subscriptionName += $"-{suffix}";
 
-            var pipe = CreatePublishPipe(specifications);
-
-            return new ServiceBusPublishEndpointProvider(_host, cache, pipe);
+            return subscriptionName;
         }
 
-        public IEnumerable<TopicSubscriptionSettings> GetTopicSubscriptions()
+        BrokerTopology BuildTopology(ReceiveSettings settings)
         {
-            return _topicSubscriptions;
+            var topologyBuilder = new ReceiveEndpointBrokerTopologyBuilder();
+
+            topologyBuilder.Queue = topologyBuilder.CreateQueue(settings.GetQueueDescription());
+
+            _configuration.Topology.Consume.Apply(topologyBuilder);
+
+            return topologyBuilder.BuildBrokerTopology();
         }
     }
 }

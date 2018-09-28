@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -18,34 +18,40 @@ namespace MassTransit.Transports
     using System.Threading;
     using System.Threading.Tasks;
     using GreenPipes;
-    using Pipeline;
+    using GreenPipes.Agents;
     using Pipeline.Observables;
     using Util;
 
 
     public class ReceiveEndpointCollection :
+        Agent,
         IReceiveEndpointCollection
     {
         readonly ConsumeObservable _consumeObservers;
-        readonly Dictionary<string, IReceiveEndpoint> _endpoints;
+        readonly Dictionary<string, IReceiveEndpointControl> _endpoints;
         readonly Dictionary<string, HostReceiveEndpointHandle> _handles;
         readonly object _mutateLock = new object();
+        readonly PublishObservable _publishObservers;
         readonly ReceiveEndpointObservable _receiveEndpointObservers;
         readonly ReceiveObservable _receiveObservers;
+        readonly SendObservable _sendObservers;
 
         public ReceiveEndpointCollection()
         {
-            _endpoints = new Dictionary<string, IReceiveEndpoint>(StringComparer.OrdinalIgnoreCase);
+            _endpoints = new Dictionary<string, IReceiveEndpointControl>(StringComparer.OrdinalIgnoreCase);
             _handles = new Dictionary<string, HostReceiveEndpointHandle>(StringComparer.OrdinalIgnoreCase);
             _receiveObservers = new ReceiveObservable();
             _receiveEndpointObservers = new ReceiveEndpointObservable();
             _consumeObservers = new ConsumeObservable();
+            _publishObservers = new PublishObservable();
+            _sendObservers = new SendObservable();
         }
 
-        public void Add(string endpointName, IReceiveEndpoint endpoint)
+        public void Add(string endpointName, IReceiveEndpointControl endpoint)
         {
             if (endpoint == null)
                 throw new ArgumentNullException(nameof(endpoint));
+
             if (string.IsNullOrWhiteSpace(endpointName))
                 throw new ArgumentException($"The {nameof(endpointName)} must not be null or empty", nameof(endpointName));
 
@@ -58,25 +64,27 @@ namespace MassTransit.Transports
             }
         }
 
-        public Task<HostReceiveEndpointHandle[]> StartEndpoints()
+        public HostReceiveEndpointHandle[] StartEndpoints()
         {
-            KeyValuePair<string, IReceiveEndpoint>[] startable;
+            KeyValuePair<string, IReceiveEndpointControl>[] startable;
             lock (_mutateLock)
+            {
                 startable = _endpoints.Where(x => !_handles.ContainsKey(x.Key)).ToArray();
+            }
 
-            return Task.WhenAll(startable.Select(x => StartEndpoint(x.Key, x.Value)));
+            return startable.Select(x => StartEndpoint(x.Key, x.Value)).ToArray();
         }
 
-        public Task<HostReceiveEndpointHandle> Start(string endpointName)
+        public HostReceiveEndpointHandle Start(string endpointName)
         {
             if (string.IsNullOrWhiteSpace(endpointName))
                 throw new ArgumentException($"The {nameof(endpointName)} must not be null or empty", nameof(endpointName));
 
-            IReceiveEndpoint endpoint;
+            IReceiveEndpointControl endpoint;
             lock (_mutateLock)
             {
                 if (!_endpoints.TryGetValue(endpointName, out endpoint))
-                    throw new ConfigurationException($"A receive endpoint with the same key was already added: {endpointName}");
+                    throw new ConfigurationException($"A receive endpoint with the key was not found: {endpointName}");
 
                 if (_handles.ContainsKey(endpointName))
                     throw new ArgumentException($"The specified endpoint has already been started: {endpointName}", nameof(endpointName));
@@ -87,14 +95,13 @@ namespace MassTransit.Transports
 
         public void Probe(ProbeContext context)
         {
-            foreach (KeyValuePair<string, IReceiveEndpoint> receiveEndpoint in _endpoints)
+            foreach (KeyValuePair<string, IReceiveEndpointControl> receiveEndpoint in _endpoints)
             {
                 var endpointScope = context.CreateScope("receiveEndpoint");
                 endpointScope.Add("name", receiveEndpoint.Key);
                 if (_handles.ContainsKey(receiveEndpoint.Key))
-                {
                     endpointScope.Add("started", true);
-                }
+
                 receiveEndpoint.Value.Probe(endpointScope);
             }
         }
@@ -109,7 +116,8 @@ namespace MassTransit.Transports
             return _receiveEndpointObservers.Connect(observer);
         }
 
-        public ConnectHandle ConnectConsumeMessageObserver<T>(IConsumeMessageObserver<T> observer) where T : class
+        public ConnectHandle ConnectConsumeMessageObserver<T>(IConsumeMessageObserver<T> observer)
+            where T : class
         {
             return new MultipleConnectHandle(_endpoints.Values.Select(x => x.ConnectConsumeMessageObserver(observer)));
         }
@@ -119,7 +127,28 @@ namespace MassTransit.Transports
             return _consumeObservers.Connect(observer);
         }
 
-        async Task<HostReceiveEndpointHandle> StartEndpoint(string endpointName, IReceiveEndpoint endpoint)
+        public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
+        {
+            return _publishObservers.Connect(observer);
+        }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer)
+        {
+            return _sendObservers.Connect(observer);
+        }
+
+        protected override async Task StopAgent(StopContext context)
+        {
+            HostReceiveEndpointHandle[] handles;
+            lock (_mutateLock)
+                handles = _handles.Values.ToArray();
+
+            await Task.WhenAll(handles.Select(x => x.StopAsync(context.CancellationToken))).ConfigureAwait(false);
+
+            await base.StopAgent(context);
+        }
+
+        HostReceiveEndpointHandle StartEndpoint(string endpointName, IReceiveEndpointControl endpoint)
         {
             try
             {
@@ -128,22 +157,26 @@ namespace MassTransit.Transports
                 var consumeObserver = endpoint.ConnectConsumeObserver(_consumeObservers);
                 var receiveObserver = endpoint.ConnectReceiveObserver(_receiveObservers);
                 var receiveEndpointObserver = endpoint.ConnectReceiveEndpointObserver(_receiveEndpointObservers);
+                var publishObserver = endpoint.ConnectPublishObserver(_publishObservers);
+                var sendObserver = endpoint.ConnectSendObserver(_sendObservers);
                 var endpointHandle = endpoint.Start();
 
                 var handle = new Handle(endpointHandle, endpoint, endpointReady.Ready, () => Remove(endpointName),
-                    receiveObserver, receiveEndpointObserver, consumeObserver);
-
-                await handle.Ready.ConfigureAwait(false);
+                    receiveObserver, receiveEndpointObserver, consumeObserver, publishObserver, sendObserver);
 
                 lock (_mutateLock)
+                {
                     _handles.Add(endpointName, handle);
+                }
 
                 return handle;
             }
             catch
             {
                 lock (_mutateLock)
+                {
                     _endpoints.Remove(endpointName);
+                }
 
                 throw;
             }
@@ -182,7 +215,6 @@ namespace MassTransit.Transports
             }
 
             public IReceiveEndpoint ReceiveEndpoint { get; }
-
             public Task<ReceiveEndpointReady> Ready { get; }
 
             public async Task StopAsync(CancellationToken cancellationToken)
@@ -191,9 +223,7 @@ namespace MassTransit.Transports
                     return;
 
                 foreach (var handle in _handles)
-                {
                     handle.Disconnect();
-                }
 
                 await _endpointHandle.Stop(cancellationToken).ConfigureAwait(false);
 

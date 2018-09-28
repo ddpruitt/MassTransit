@@ -17,39 +17,39 @@ namespace MassTransit
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
-    using Context;
+    using Configuration;
+    using Context.Converters;
     using Events;
     using GreenPipes;
-    using Internals.Extensions;
+    using GreenPipes.Internals.Extensions;
     using Logging;
     using Pipeline;
+    using Topology;
     using Transports;
     using Util;
 
 
     public class MassTransitBus :
-        IBusControl,
-        IDisposable
+        IBusControl
     {
         static readonly ILog _log = Logger.Get<MassTransitBus>();
         readonly IBusObserver _busObservable;
         readonly IConsumePipe _consumePipe;
-        readonly IBusHostCollection _hosts;
+        readonly IReadOnlyHostCollection _hosts;
         readonly Lazy<IPublishEndpoint> _publishEndpoint;
-        readonly IPublishEndpointProvider _publishEndpointProvider;
         readonly ISendEndpointProvider _sendEndpointProvider;
         Handle _busHandle;
 
         public MassTransitBus(Uri address, IConsumePipe consumePipe, ISendEndpointProvider sendEndpointProvider,
-            IPublishEndpointProvider publishEndpointProvider, IBusHostCollection hosts,
-            IBusObserver busObservable)
+            IPublishEndpointProvider publishEndpointProvider, IReadOnlyHostCollection hosts, IBusObserver busObservable)
         {
             Address = address;
             _consumePipe = consumePipe;
             _sendEndpointProvider = sendEndpointProvider;
-            _publishEndpointProvider = publishEndpointProvider;
             _busObservable = busObservable;
             _hosts = hosts;
+
+            Topology = hosts.GetBusTopology();
 
             _publishEndpoint = new Lazy<IPublishEndpoint>(() => publishEndpointProvider.CreatePublishEndpoint(address));
         }
@@ -94,8 +94,7 @@ namespace MassTransit
             return PublishEndpointConverterCache.Publish(this, message, messageType, cancellationToken);
         }
 
-        Task IPublishEndpoint.Publish(object message, Type messageType, IPipe<PublishContext> publishPipe,
-            CancellationToken cancellationToken)
+        Task IPublishEndpoint.Publish(object message, Type messageType, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken)
         {
             return PublishEndpointConverterCache.Publish(this, message, messageType, publishPipe, cancellationToken);
         }
@@ -116,6 +115,8 @@ namespace MassTransit
         }
 
         public Uri Address { get; }
+
+        public IBusTopology Topology { get; }
 
         Task<ISendEndpoint> ISendEndpointProvider.GetSendEndpoint(Uri address)
         {
@@ -149,7 +150,7 @@ namespace MassTransit
 
                 busHandle = new Handle(hosts, this, _busObservable);
 
-                await busHandle.Ready.WithCancellation(cancellationToken).ConfigureAwait(false);
+                await busHandle.Ready.UntilCompletedOrCanceled(cancellationToken).ConfigureAwait(false);
 
                 await _busObservable.PostStart(this, busHandle.Ready).ConfigureAwait(false);
 
@@ -219,7 +220,12 @@ namespace MassTransit
 
         public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
         {
-            return _publishEndpointProvider.ConnectPublishObserver(observer);
+            return new MultipleConnectHandle(_hosts.Select(h => h.ConnectPublishObserver(observer)));
+        }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer)
+        {
+            return new MultipleConnectHandle(_hosts.Select(h => h.ConnectSendObserver(observer)));
         }
 
         void IProbeSite.Probe(ProbeContext context)
@@ -232,20 +238,6 @@ namespace MassTransit
 
             foreach (var host in _hosts)
                 host.Probe(scope);
-        }
-
-        public ConnectHandle ConnectSendObserver(ISendObserver observer)
-        {
-            return _sendEndpointProvider.ConnectSendObserver(observer);
-        }
-
-        void IDisposable.Dispose()
-        {
-            if (_busHandle != null && !_busHandle.Stopped)
-                throw new MassTransitException("The bus was disposed without being stopped. Explicitly call StopAsync before the bus instance is disposed.");
-
-            (_sendEndpointProvider as IDisposable)?.Dispose();
-            (_publishEndpointProvider as IDisposable)?.Dispose();
         }
 
 
@@ -287,6 +279,9 @@ namespace MassTransit
                 catch (Exception exception)
                 {
                     await _busObserver.StopFaulted(_bus, exception).ConfigureAwait(false);
+
+                    if (_log.IsWarnEnabled)
+                        _log.WarnFormat("Exception occurred while stopping hosts", exception);
 
                     throw;
                 }

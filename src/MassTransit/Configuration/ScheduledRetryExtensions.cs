@@ -13,6 +13,7 @@
 namespace MassTransit
 {
     using System;
+    using System.Threading;
     using Context;
     using GreenPipes;
     using GreenPipes.Configurators;
@@ -40,9 +41,15 @@ namespace MassTransit
             var retrySpecification = new RedeliveryRetryPipeSpecification<T>();
 
             retrySpecification.SetRetryPolicy(exceptionFilter =>
-                new ConsumeContextRetryPolicy<ConsumeContext<T>, RetryConsumeContext<T>>(retryPolicy, x => new RetryConsumeContext<T>(x)));
+                new ConsumeContextRetryPolicy<ConsumeContext<T>, RetryConsumeContext<T>>(retryPolicy, CancellationToken.None, Factory));
 
             configurator.AddPipeSpecification(retrySpecification);
+        }
+
+        static RetryConsumeContext<T> Factory<T>(ConsumeContext<T> context, IRetryPolicy retryPolicy)
+            where T : class
+        {
+            return new RetryConsumeContext<T>(context, retryPolicy);
         }
 
         /// <summary>
@@ -65,6 +72,22 @@ namespace MassTransit
             configure?.Invoke(retrySpecification);
 
             configurator.AddPipeSpecification(retrySpecification);
+        }
+
+        /// <summary>
+        /// Configure scheduled redelivery for all message types
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="configureRetry"></param>
+        public static void UseScheduledRedelivery(this IConsumePipeConfigurator configurator, Action<IRetryConfigurator> configureRetry)
+        {
+            if (configurator == null)
+                throw new ArgumentNullException(nameof(configurator));
+
+            if (configureRetry == null)
+                throw new ArgumentNullException(nameof(configureRetry));
+
+            var observer = new ScheduledRedeliveryConfigurationObserver(configurator, configureRetry);
         }
     }
 }

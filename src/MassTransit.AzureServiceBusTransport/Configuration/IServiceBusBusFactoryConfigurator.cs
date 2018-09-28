@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2015 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,24 +15,47 @@ namespace MassTransit.AzureServiceBusTransport
     using System;
     using System.ComponentModel;
     using MassTransit.Builders;
+    using Topology.Configuration;
 
 
     public interface IServiceBusBusFactoryConfigurator :
         IBusFactoryConfigurator,
         IServiceBusQueueEndpointConfigurator
     {
+        new IServiceBusSendTopologyConfigurator SendTopology { get; }
+
+        new IServiceBusPublishTopologyConfigurator PublishTopology { get; }
+
+        /// <summary>
+        /// Set to true if the topology should be deployed only
+        /// </summary>
+        bool DeployTopologyOnly { set; }
+
+        /// <summary>
+        /// Configure the send topology of the message type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="configureTopology"></param>
+        void Send<T>(Action<IServiceBusMessageSendTopologyConfigurator<T>> configureTopology)
+            where T : class;
+
+        /// <summary>
+        /// Configure the send topology of the message type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="configureTopology"></param>
+        void Publish<T>(Action<IServiceBusMessagePublishTopologyConfigurator<T>> configureTopology)
+            where T : class;
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<IBusBuilder> specification);
+
         /// <summary>
         /// In most cases, this is not needed and should not be used. However, if for any reason the default bus
         /// endpoint queue name needs to be changed, this will do it. Do NOT set it to the same name as a receive
         /// endpoint or you will screw things up.
         /// </summary>
         void OverrideDefaultBusEndpointQueueName(string value);
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        void AddBusFactorySpecification(IBusFactorySpecification<IBusBuilder> specification);
-
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<IBusBuilder> specification);
 
         /// <summary>
         /// Configures a host
@@ -64,8 +87,9 @@ namespace MassTransit.AzureServiceBusTransport
         /// </summary>
         /// <param name="host">The host for this endpoint</param>
         /// <param name="subscriptionName">The name of the subscription</param>
-        /// <param name="topicName">The topic name to subscribe</param>
+        /// <param name="topicPath">The topic name to subscribe</param>
         /// <param name="configure"></param>
-        void SubscriptionEndpoint(IServiceBusHost host, string subscriptionName, string topicName, Action<IServiceBusSubscriptionEndpointConfigurator> configure);
+        void SubscriptionEndpoint(IServiceBusHost host, string subscriptionName, string topicPath,
+            Action<IServiceBusSubscriptionEndpointConfigurator> configure);
     }
 }

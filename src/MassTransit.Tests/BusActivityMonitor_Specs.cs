@@ -16,9 +16,10 @@ namespace MassTransit.Tests
     using System.Collections.Generic;
     using System.Threading.Tasks;
     using GreenPipes;
+    using MassTransit.Testing;
+    using MassTransit.Testing.Indicators;
     using NUnit.Framework;
     using TestFramework;
-    using TestFramework.Indicators;
     using TestFramework.Messages;
     using Util;
 
@@ -72,7 +73,9 @@ namespace MassTransit.Tests
         {
             _retryEnumerator.MoveNext();
             var retryPolicy = _retryEnumerator.Current;
+        #pragma warning disable 618
             configurator.UseRetry(retryPolicy);
+        #pragma warning restore 618
             configurator.Consumer<TConsumer>(
                 x =>
                 {

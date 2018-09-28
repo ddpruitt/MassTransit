@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -13,32 +13,34 @@
 namespace MassTransit.RabbitMqTransport.Transport
 {
     using System;
-    using Builders;
-    using Configurators;
+    using Configuration;
     using MassTransit.Configurators;
 
 
     public class RabbitMqReceiveEndpointFactory :
         IRabbitMqReceiveEndpointFactory
     {
-        readonly RabbitMqBusBuilder _builder;
+        readonly IRabbitMqBusConfiguration _configuration;
         readonly IRabbitMqHost _host;
 
-        public RabbitMqReceiveEndpointFactory(RabbitMqBusBuilder builder, IRabbitMqHost host)
+        public RabbitMqReceiveEndpointFactory(IRabbitMqBusConfiguration configuration, IRabbitMqHost host)
         {
-            _builder = builder;
+            _configuration = configuration;
             _host = host;
         }
 
         public void CreateReceiveEndpoint(string queueName, Action<IRabbitMqReceiveEndpointConfigurator> configure)
         {
-            var endpointConfigurator = new RabbitMqReceiveEndpointSpecification(_host, queueName);
+            if (!_configuration.TryGetHost(_host, out var hostConfiguration))
+                throw new ConfigurationException("The host was not properly configured");
 
-            configure?.Invoke(endpointConfigurator);
+            var configuration = hostConfiguration.CreateReceiveEndpointConfiguration(queueName);
 
-            BusConfigurationResult.CompileResults(endpointConfigurator.Validate());
+            configure?.Invoke(configuration.Configurator);
 
-            endpointConfigurator.Apply(_builder);
+            BusConfigurationResult.CompileResults(configuration.Validate());
+
+            configuration.Build();
         }
     }
 }

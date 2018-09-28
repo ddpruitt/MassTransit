@@ -20,6 +20,7 @@ namespace MassTransit.AutomatonymousIntegration.Tests
     using NUnit.Framework;
     using Saga;
     using TestFramework;
+    using Testing;
 
 
     [TestFixture]
@@ -39,11 +40,11 @@ namespace MassTransit.AutomatonymousIntegration.Tests
 
             Guid? saga =
                 await _repository.ShouldContainSaga(x => x.CorrelationId == sagaId && x.CurrentState == _machine.Running, TestTimeout);
+
             Assert.IsTrue(saga.HasValue);
         }
 
-
-        [Test]
+        [Test, Explicit]
         public void Should_return_a_wonderful_breakdown_of_the_guts_inside_it()
         {
             ProbeResult result = Bus.GetProbeResult();
@@ -141,6 +142,7 @@ namespace MassTransit.AutomatonymousIntegration.Tests
         }
     }
 
+
     [TestFixture]
     public class When_a_saga_goes_straight_to_finalized :
         InMemoryTestFixture
@@ -150,13 +152,7 @@ namespace MassTransit.AutomatonymousIntegration.Tests
         {
             Guid sagaId = Guid.NewGuid();
 
-            Task<Answer> responseTask = null;
-            await Bus.Request(InputQueueSendEndpoint, new Ask{CorrelationId = sagaId}, x =>
-            {
-                responseTask = x.Handle<Answer>();
-            }, TestCancellationToken);
-
-            var response = await responseTask;
+            var response = await Bus.Request<Ask, Answer>(InputQueueAddress, new Ask {CorrelationId = sagaId}, TestCancellationToken);
 
             await Task.Delay(50);
 
@@ -207,7 +203,7 @@ namespace MassTransit.AutomatonymousIntegration.Tests
 
                 Initially(
                     When(Asked)
-                        .Respond(context => new Answer{CorrelationId = context.Data.CorrelationId})
+                        .Respond(context => new Answer {CorrelationId = context.Data.CorrelationId})
                         .Finalize());
 
                 SetCompletedWhenFinalized();
@@ -217,7 +213,7 @@ namespace MassTransit.AutomatonymousIntegration.Tests
         }
 
 
-        class Ask 
+        class Ask
         {
             public Guid CorrelationId { get; set; }
         }

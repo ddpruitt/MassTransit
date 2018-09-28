@@ -25,7 +25,7 @@ namespace MassTransit.AzureServiceBusTransport
             return new QueueDescription(queueName)
             {
                 AutoDeleteOnIdle = AutoDeleteOnIdle,
-                DefaultMessageTimeToLive = TimeSpan.FromDays(365 + 1),
+                DefaultMessageTimeToLive = DefaultMessageTimeToLive,
                 EnableBatchedOperations = true,
                 EnableDeadLetteringOnMessageExpiration = true,
                 LockDuration = TimeSpan.FromMinutes(5),
@@ -38,7 +38,7 @@ namespace MassTransit.AzureServiceBusTransport
             return new TopicDescription(topicName)
             {
                 AutoDeleteOnIdle = AutoDeleteOnIdle,
-                DefaultMessageTimeToLive = TimeSpan.FromDays(365 + 1),
+                DefaultMessageTimeToLive = DefaultMessageTimeToLive,
                 EnableBatchedOperations = true
             };
         }
@@ -75,5 +75,9 @@ namespace MassTransit.AzureServiceBusTransport
         }
 
         public static TimeSpan AutoDeleteOnIdle => TimeSpan.FromDays(427);
+        public static TimeSpan TemporaryAutoDeleteOnIdle => TimeSpan.FromMinutes(5);
+        public static TimeSpan LockDuration = TimeSpan.FromMinutes(5);
+        public static TimeSpan DefaultMessageTimeToLive = TimeSpan.FromDays(365 + 1);
+        public static TimeSpan BasicMessageTimeToLive = TimeSpan.FromDays(14);
     }
 }

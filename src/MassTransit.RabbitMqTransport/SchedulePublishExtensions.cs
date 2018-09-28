@@ -18,6 +18,7 @@ namespace MassTransit
     using GreenPipes;
     using RabbitMqTransport;
     using Scheduling;
+    using Util;
 
 
     public static class SchedulePublishExtensions
@@ -35,7 +36,7 @@ namespace MassTransit
             CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
@@ -56,7 +57,7 @@ namespace MassTransit
             CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
@@ -77,7 +78,7 @@ namespace MassTransit
             CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
@@ -190,11 +191,16 @@ namespace MassTransit
             CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            if (values == null)
+                throw new ArgumentNullException(nameof(values));
+
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
+
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
-            return scheduler.ScheduleSend<T>(destinationAddress, scheduledTime, values, cancellationToken);
+            return scheduler.ScheduleSend(destinationAddress, scheduledTime, message, cancellationToken);
         }
 
         /// <summary>
@@ -212,11 +218,16 @@ namespace MassTransit
             IPipe<SendContext<T>> pipe, CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            if (values == null)
+                throw new ArgumentNullException(nameof(values));
+
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
+
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
-            return scheduler.ScheduleSend(destinationAddress, scheduledTime, values, pipe, cancellationToken);
+            return scheduler.ScheduleSend(destinationAddress, scheduledTime, message, pipe, cancellationToken);
         }
 
         /// <summary>
@@ -234,11 +245,16 @@ namespace MassTransit
             CancellationToken cancellationToken = default(CancellationToken))
             where T : class
         {
-            var destinationAddress = GetDestinationAddress(context, typeof(T));
+            if (values == null)
+                throw new ArgumentNullException(nameof(values));
+
+            var message = TypeMetadataCache<T>.InitializeFromObject(values);
+
+            var destinationAddress = GetDestinationAddress<T>(context);
 
             var scheduler = context.GetPayload<MessageSchedulerContext>();
 
-            return scheduler.ScheduleSend<T>(destinationAddress, scheduledTime, values, pipe, cancellationToken);
+            return scheduler.ScheduleSend(destinationAddress, scheduledTime, message, pipe, cancellationToken);
         }
 
         /// <summary>
@@ -427,15 +443,25 @@ namespace MassTransit
             return SchedulePublish<T>(context, scheduledTime, values, pipe, cancellationToken);
         }
 
+        static Uri GetDestinationAddress<T>(ConsumeContext context)
+            where T : class
+        {
+            var modelContext = context.ReceiveContext.GetPayload<ModelContext>();
+
+            if (modelContext.PublishTopology.GetMessageTopology<T>().TryGetPublishAddress(modelContext.ConnectionContext.HostAddress, out var destinationAddress))
+                return destinationAddress;
+
+            throw new ArgumentException($"The publish address for the message type was not found: {TypeMetadataCache<T>.ShortName}", nameof(T));
+        }
+
         static Uri GetDestinationAddress(ConsumeContext context, Type messageType)
         {
             var modelContext = context.ReceiveContext.GetPayload<ModelContext>();
 
-            var hostSettings = modelContext.ConnectionContext.HostSettings;
+            if (modelContext.PublishTopology.TryGetPublishAddress(messageType, modelContext.ConnectionContext.HostAddress, out var destinationAddress))
+                return destinationAddress;
 
-            var sendSettings = hostSettings.GetSendSettings(messageType);
-
-            return sendSettings.GetSendAddress(hostSettings.HostAddress);
+            throw new ArgumentException($"The publish address for the message type was not found: {TypeMetadataCache.GetShortName(messageType)}", nameof(messageType));
         }
     }
 }

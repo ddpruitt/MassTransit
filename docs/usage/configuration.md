@@ -1,5 +1,14 @@
 # Configuring MassTransit
+<!-- TOC -->
 
+- [MassTransit in a console application](#masstransit-in-a-console-application)
+- [MassTransit in a Windows service](#masstransit-in-a-windows-service)
+- [MassTransit in a web application](#masstransit-in-a-web-application)
+    - [ASP.NET (MVC/WebApi2)](#aspnet-mvcwebapi2)
+    - [OWIN Pipeline (WebApi2)](#owin-pipeline-webapi2)
+    - [ASP.NET Core](#aspnet-core)
+
+<!-- /TOC -->
 To configure MassTransit in your application, it depends upon the application type.
 There are several application types, which are covered below. In these examples, the
 use of a dependency injection framework is not included. Using a container (such as
@@ -21,9 +30,11 @@ namespace EventPublisher
 
     public class Program
     {
-        public void static Main()
+        public static void Main()
         {
             var busControl = ConfigureBus();
+
+            // Important! The bus must be started before using it!
             busControl.Start();
 
             do
@@ -60,9 +71,9 @@ namespace EventPublisher
 }
 ```
 
-In the example, the bus is configured and started, after which a publishing loop
-allows values to be entered and published. When the loop exits, the ``busControl``
-variable is disposed, which stops the bus.
+In the example, the bus is configured and started, after which a publishing loop allows values to be entered and published. When the loop exits, the ``busControl`` variable is disposed, which stops the bus.
+
+Always start the bus before starting to use it. Of course, you can only start a configured bus.
 
 ## MassTransit in a Windows service
 
@@ -87,9 +98,9 @@ namespace EventService
 
     public class Program
     {
-        public int static Main()
+        public static int Main()
         {
-            return HostFactory.Run(cfg => cfg.Service(x => new EventConsumerService());
+            return (int)HostFactory.Run(cfg => cfg.Service(x => new EventConsumerService());
         }
     }
 
@@ -327,3 +338,68 @@ public class MyController : ApiController
     }
 }
 ```
+
+### ASP.NET Core
+
+With the latest version of ASP.NET the WebAPI functionality was merged into ASP.NET removing the previous dichotomy. As in the previous example we'll build on top of Autofac. There is a built-in container in ASP.NET Core but it lacks some advanced capabilities which are a nice to have. 
+
+In our ASP.NET Core project we'll need to do two things. The first is to create a service class that implements `IHostedService` that takes `IBusControl` as a parameter. The `IBusControl` will be handed to our service class via the dependency injection framework.
+
+```csharp
+ public class MassTransitHostedService : Microsoft.Extensions.Hosting.IHostedService
+    {
+        private readonly IBusControl busControl;
+
+        public MassTransitHostedService(IBusControl busControl)
+        {
+            this.busControl = busControl;
+        }
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            //start the bus
+            await busControl.StartAsync(cancellationToken);
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            //stop the bus
+            await busControl.StopAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+```
+This service class will be automatically handled by ASP.NET runtime to start and stop our bus.
+
+The second is in the startup.cs in the `ConfigureServices` method which is used to register services in the dependency injection framework. 
+
+```csharp
+public IServiceProvider ConfigureServices(IServiceCollection services)
+{
+    // Add framework services.
+    services.AddMvc();
+    // Add the service class so that the runtime can automatically handle the start and stop of our bus.
+    services.AddScoped<IHostedService, MassTransitHostedService>();
+    
+    var builder = new ContainerBuilder(); 
+    
+    builder.Register(c =>
+    {
+        return Bus.Factory.CreateUsingRabbitMq(sbc => 
+            sbc.Host("localhost","dev", h =>
+            {
+                h.Username("guest");
+                h.Password("guest");
+            })
+        );
+    })
+    .As<IBusControl>()
+    .As<IPublishEndpoint>()
+    .SingleInstance();
+    builder.Populate(services);
+    container = builder.Build();
+    
+    // Create the IServiceProvider based on the container.
+    return new AutofacServiceProvider(container);
+}
+```
+This registers the bus and the service class with the container and set up the container as the default for resolution.

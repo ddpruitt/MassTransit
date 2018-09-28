@@ -7,7 +7,7 @@ skip_commits:
   files:
     - docs/*
     - '**/*.html'
-image: Visual Studio 2015
+image: Visual Studio 2017
 configuration: Release
 platform: Any CPU
 services:
@@ -16,6 +16,12 @@ services:
 nuget:
   project_feed: true
   disable_publish_on_pr: true
+install:
+  # Install DocumentDB Emulator
+  - ps: Start-FileDownload 'https://aka.ms/cosmosdb-emulator' -FileName 'C:\CosmosDB.Emulator.msi'
+  - cmd: cmd /c start /wait msiexec.exe /i C:\CosmosDB.Emulator.msi /quiet /qn /norestart /log install.log
+  - ps: >-
+      & "${env:ProgramFiles}\Azure Cosmos DB Emulator\CosmosDB.Emulator.exe" /NoExplorer /NoUI /NoFirewall
 build_script:
 - cmd: >-
     @echo off
@@ -26,7 +32,7 @@ build_script:
 
     SET PGPASSWORD=Password12!
 
-    PATH=C:\Program Files\PostgreSQL\9.3\bin\;%PATH%
+    PATH=C:\Program Files\PostgreSQL\9.6\bin\;%PATH%
 
     createdb MartenTest
 
@@ -39,18 +45,33 @@ build_script:
     src\packages\FAKE\tools\fake.exe build.fsx %*
 test:
   assemblies:
-  - src/MassTransit.Tests/bin/Release/MassTransit.Tests.dll
-  - src/Containers/MassTransit.Containers.Tests/bin/Release/MassTransit.Containers.Tests.dll
-  - src/MassTransit.AutomatonymousIntegration.Tests/bin/Release/MassTransit.AutomatonymousIntegration.Tests.dll
-  - src/Persistence/MassTransit.MongoDbIntegration.Tests/bin/Release/MassTransit.MongoDbIntegration.Tests.dll
-  - src/Persistence/MassTransit.MartenIntegration.Tests/bin/Release/MassTransit.MartenIntegration.Tests.dll
-  - src/MassTransit.HttpTransport.Tests/bin/Release/MassTransit.HttpTransport.Tests.dll
+  - src/MassTransit.Tests/bin/Release/net452/MassTransit.Tests.dll
+  - src/Containers/MassTransit.Containers.Tests/bin/Release/net452/MassTransit.Containers.Tests.dll
+  - src/MassTransit.AutomatonymousIntegration.Tests/bin/Release/net461/MassTransit.AutomatonymousIntegration.Tests.dll
+  - src/Persistence/MassTransit.MongoDbIntegration.Tests/bin/Release/net452/MassTransit.MongoDbIntegration.Tests.dll
+  - src/Persistence/MassTransit.MartenIntegration.Tests/bin/Release/net452/MassTransit.MartenIntegration.Tests.dll
+  - src/Persistence/MassTransit.NHibernateIntegration.Tests/bin/Release/net461/MassTransit.NHibernateIntegration.Tests.dll
+  - src/Persistence/MassTransit.DocumentDbIntegration.Tests/bin/Release/MassTransit.DocumentDbIntegration.Tests.dll
+  - src/MassTransit.HttpTransport.Tests/bin/Release/net452/MassTransit.HttpTransport.Tests.dll
   categories:
     except:
     - Flakey
 artifacts:
 - path: build_artifacts/*.nupkg
   name: Packages
+deploy:
+- provider: NuGet
+  name: Prerelease
+  api_key:
+    secure: 0B2TmwiOnNW+CavGbvgr6S8WcuB2A/5enkf/ZrlRW+8Q8AwW5P9T7+B3QDAtYiEi
+  on:
+    branch: develop
+- provider: NuGet
+  name: Release
+  api_key:
+    secure: 0B2TmwiOnNW+CavGbvgr6S8WcuB2A/5enkf/ZrlRW+8Q8AwW5P9T7+B3QDAtYiEi
+  on:
+    branch: master
 notifications:
 - provider: Webhook
   url: https://webhooks.gitter.im/e/27919bcbf1f770b0befd

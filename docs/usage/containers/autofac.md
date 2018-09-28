@@ -37,7 +37,7 @@ namespace Example
             var builder = new ContainerBuilder();
 
             // register a specific consumer
-            builder.RegisterType<<UpdateCustomerAddressConsumer>();
+            builder.RegisterType<UpdateCustomerAddressConsumer>();
 
             // just register all the consumers
             builder.RegisterConsumers(Assembly.GetExecutingAssembly());
@@ -54,7 +54,11 @@ namespace Example
 
                     cfg.ReceiveEndpoint("customer_update_queue", ec =>
                     {
+                        // if only one consumer in the consumer for this queue
                         ec.LoadFrom(context);
+
+                        // otherwise, be smart, register explicitly
+                        ec.Consumer<UpdateCustomerConsumer>(context);
                     });
                 });
 
@@ -182,13 +186,15 @@ var busControl = Bus.Factory.CreateUsingRabbitMq(cfg =>
 
 Below you find samples of how to register different saga persistence implementations with Autofac.
 
+> Saga repositories must be registered as singletons (`SingleInstance()`).
+
 ### NHibernate
 
 For NHibernate you can scan an assembly where your saga instance mappings are defined to find
 the mapping classes, and then give the list of mapping types as a parameter to the session factory provider.
 
-Then, you instruct Autofac to use the session factory provider to get the `ISession` instance. 
-NHibernate saga repository is then registered as generic and since it only uses the `ISession`, 
+Then, you instruct Autofac to use the session factory provider to get the `ISession` instance.
+NHibernate saga repository is then registered as generic and since it only uses the `ISession`,
 everything will just work.
 
 ```csharp
@@ -197,7 +203,7 @@ var mappings = mappingsAssembly
     .Where(t => t.BaseType != null && t.BaseType.IsGenericType &&
         (t.BaseType.GetGenericTypeDefinition() == typeof(SagaClassMapping<>) ||
         t.BaseType.GetGenericTypeDefinition() == typeof(ClassMapping<>)))
-    .ToArray();    
+    .ToArray();
 builder.Register(c => new SqlServerSessionFactoryProvider(connString, mappings).GetSessionFactory())
     .As<ISessionFactory>()
     .SingleInstance();
@@ -216,7 +222,8 @@ separately like this:
 
 ```csharp
 builder.Register(c => new EntityFrameworkSagaRepository<MySaga>(
-    () => new SagaDbContext<MySaga, MySagaMapping>(connectionString)));
+    () => new SagaDbContext<MySaga, MySagaMapping>(connectionString)))
+        .As<ISagaRepository<MySaga>>().SingleInstance();
 ```
 
 You can use your own context implementation and register the repository as generic like this:

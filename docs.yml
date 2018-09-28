@@ -1,10 +1,10 @@
 branches:
   only:
-    - develop
     - master
+    - develop
 only_commits:
   files:
-    - docs/*
+    - docs/**/*
     - '**/*.md'
     - '**/*.html'
     - docs.yml

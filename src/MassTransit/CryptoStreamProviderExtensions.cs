@@ -15,6 +15,7 @@ namespace MassTransit
     using System;
     using System.IO;
     using System.Security.Cryptography;
+    using GreenPipes;
     using Serialization;
     using Transformation;
 
@@ -44,7 +45,6 @@ namespace MassTransit
         /// <summary>
         /// Returns a stream with the encryption bits in place to ensure proper message encryption
         /// </summary>
-        /// <typeparam name="T">The message type</typeparam>
         /// <param name="provider">The crypto stream provider</param>
         /// <param name="stream">The original stream to which the encrypted message content is written</param>
         /// <param name="context">The second context of the message</param>
@@ -100,6 +100,30 @@ namespace MassTransit
                 : default(string);
 
             return provider.GetDecryptStream(stream, keyId, CryptoStreamMode.Read);
+        }
+
+        /// <summary>
+        /// Set the encryption key name on the header so that it can be applied by the crypto stream provider
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="keyName"></param>
+        /// <typeparam name="T"></typeparam>
+        public static void SetEncryptionKeyId<T>(this IPipeConfigurator<SendContext<T>> configurator, string keyName)
+            where T : class
+        {
+            configurator.UseExecute(context => context.Headers.Set(EncryptedMessageSerializer.EncryptionKeyHeader, keyName));
+        }
+
+        /// <summary>
+        /// Set the encryption key name on the header so that it can be applied by the crypto stream provider
+        /// </summary>
+        /// <param name="sendContext"></param>
+        /// <param name="keyName"></param>
+        /// <typeparam name="T"></typeparam>
+        public static void SetEncryptionKeyId<T>(this SendContext<T> sendContext, string keyName)
+            where T : class
+        {
+            sendContext.Headers.Set(EncryptedMessageSerializer.EncryptionKeyHeader, keyName);
         }
     }
 }

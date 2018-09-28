@@ -32,8 +32,8 @@ namespace MassTransit
             Action<IHandlerConfigurator<T>> configure = null)
             where T : class
         {
-            var handlerConfigurator = new HandlerConfigurator<T>(handler);
-
+            var handlerConfigurator = new HandlerConfigurator<T>(handler, configurator);
+            
             configure?.Invoke(handlerConfigurator);
 
             configurator.AddEndpointSpecification(handlerConfigurator);
@@ -60,6 +60,7 @@ namespace MassTransit
         /// <param name="connector"></param>
         /// <param name="requestId"></param>
         /// <param name="handler"></param>
+        /// <param name="specifications"></param>
         /// <returns></returns>
         public static ConnectHandle ConnectRequestHandler<T>(this IRequestPipeConnector connector, Guid requestId, MessageHandler<T> handler,
             params IPipeSpecification<ConsumeContext<T>>[] specifications)

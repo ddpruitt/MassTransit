@@ -51,8 +51,8 @@ namespace MassTransit.Serialization
             try
             {
                 XDocument document;
-                using (Stream body = receiveContext.GetBody())
-                using (var xmlReader = new XmlTextReader(body))
+                using (Stream body = receiveContext.GetBodyStream())
+                using (var xmlReader = XmlReader.Create(body, new XmlReaderSettings { CheckCharacters = false }))
                     document = XDocument.Load(xmlReader);
 
                 var json = new StringBuilder(1024);

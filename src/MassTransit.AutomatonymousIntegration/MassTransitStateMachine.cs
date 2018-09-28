@@ -23,6 +23,7 @@ namespace Automatonymous
     using MassTransit.Logging;
     using MassTransit.Scheduling;
     using Requests;
+    using SagaConfigurators;
     using Schedules;
 
 
@@ -104,7 +105,7 @@ namespace Automatonymous
         /// <typeparam name="T">The event data type</typeparam>
         /// <param name="propertyExpression">The event property</param>
         /// <param name="configureEventCorrelation">Configuration callback for the event</param>
-        protected void Event<T>(Expression<Func<Event<T>>> propertyExpression, Action<EventCorrelationConfigurator<TInstance, T>> configureEventCorrelation)
+        protected void Event<T>(Expression<Func<Event<T>>> propertyExpression, Action<IEventCorrelationConfigurator<TInstance, T>> configureEventCorrelation)
             where T : class
         {
             base.Event(propertyExpression);
@@ -133,7 +134,7 @@ namespace Automatonymous
         /// <param name="eventPropertyExpression">The event property expression</param>
         /// <param name="configureEventCorrelation">Configuration callback for the event</param>
         protected void Event<TProperty, T>(Expression<Func<TProperty>> propertyExpression, Expression<Func<TProperty, Event<T>>> eventPropertyExpression,
-            Action<EventCorrelationConfigurator<TInstance, T>> configureEventCorrelation)
+            Action<IEventCorrelationConfigurator<TInstance, T>> configureEventCorrelation)
             where TProperty : class
             where T : class
         {
@@ -173,13 +174,13 @@ namespace Automatonymous
                 var @event = (Event<T>)propertyInfo.GetValue(this);
 
                 var builderType = typeof(CorrelatedByEventCorrelationBuilder<,>).MakeGenericType(typeof(TInstance), typeof(T));
-                var builder = (EventCorrelationBuilder<TInstance>)Activator.CreateInstance(builderType, this, @event);
+                var builder = (IEventCorrelationBuilder)Activator.CreateInstance(builderType, this, @event);
 
                 _eventCorrelations[@event] = builder.Build();
             }
         }
 
-        void DefaultCorrelatedByConfigurator<T>(EventCorrelationConfigurator<TInstance, T> configurator)
+        void DefaultCorrelatedByConfigurator<T>(IEventCorrelationConfigurator<TInstance, T> configurator)
             where T : class, CorrelatedBy<Guid>
         {
             configurator.CorrelateById(context => context.Message.CorrelationId);
@@ -197,7 +198,7 @@ namespace Automatonymous
         /// <param name="configureRequest">Allow the request settings to be specified inline</param>
         protected void Request<TRequest, TResponse>(Expression<Func<Request<TInstance, TRequest, TResponse>>> propertyExpression,
             Expression<Func<TInstance, Guid?>> requestIdExpression,
-            Action<RequestConfigurator<TInstance, TRequest, TResponse>> configureRequest)
+            Action<IRequestConfigurator<TInstance, TRequest, TResponse>> configureRequest)
             where TRequest : class
             where TResponse : class
         {
@@ -259,7 +260,7 @@ namespace Automatonymous
         /// <param name="configureSchedule">The callback to configure the schedule</param>
         protected void Schedule<TMessage>(Expression<Func<Schedule<TInstance, TMessage>>> propertyExpression,
             Expression<Func<TInstance, Guid?>> tokenIdExpression,
-            Action<ScheduleConfigurator<TInstance, TMessage>> configureSchedule)
+            Action<IScheduleConfigurator<TInstance, TMessage>> configureSchedule)
             where TMessage : class
         {
             var configurator = new StateMachineScheduleConfigurator<TInstance, TMessage>();
@@ -327,7 +328,8 @@ namespace Automatonymous
 
                         await ((StateMachine<TInstance>)this).RaiseEvent(eventContext).ConfigureAwait(false);
 
-                        schedule.SetTokenId(context.Instance, default(Guid?));
+                        if(schedule.GetTokenId(context.Instance) == tokenId)
+                            schedule.SetTokenId(context.Instance, default(Guid?));
                     }));
         }
 
@@ -375,26 +377,27 @@ namespace Automatonymous
 
             foreach (var propertyInfo in properties)
             {
-                if (propertyInfo.PropertyType.IsGenericType)
+                var propertyTypeInfo = propertyInfo.PropertyType.GetTypeInfo();
+                if (!propertyTypeInfo.IsGenericType)
+                    continue;
+
+                if (propertyTypeInfo.GetGenericTypeDefinition() != typeof(Event<>))
+                    continue;
+
+                var messageTypeInfo = propertyTypeInfo.GetGenericArguments().First().GetTypeInfo();
+                if (messageTypeInfo.AsType().HasInterface<CorrelatedBy<Guid>>())
                 {
-                    if (propertyInfo.PropertyType.GetGenericTypeDefinition() == typeof(Event<>))
-                    {
-                        var messageType = propertyInfo.PropertyType.GetGenericArguments().First();
-                        if (messageType.HasInterface<CorrelatedBy<Guid>>())
-                        {
-                            var declarationType = typeof(CorrelatedEventRegistration<,>).MakeGenericType(typeof(TInstance), machineType,
-                                messageType);
-                            var declaration = Activator.CreateInstance(declarationType, propertyInfo);
-                            events.Add((StateMachineRegistration)declaration);
-                        }
-                        else
-                        {
-                            var declarationType = typeof(UncorrelatedEventRegistration<,>).MakeGenericType(typeof(TInstance), machineType,
-                                messageType);
-                            var declaration = Activator.CreateInstance(declarationType, propertyInfo);
-                            events.Add((StateMachineRegistration)declaration);
-                        }
-                    }
+                    var declarationType = typeof(CorrelatedEventRegistration<,>).MakeGenericType(typeof(TInstance), machineType,
+                        messageTypeInfo.AsType());
+                    var declaration = Activator.CreateInstance(declarationType, propertyInfo);
+                    events.Add((StateMachineRegistration)declaration);
+                }
+                else
+                {
+                    var declarationType = typeof(UncorrelatedEventRegistration<,>).MakeGenericType(typeof(TInstance), machineType,
+                        messageTypeInfo.AsType());
+                    var declaration = Activator.CreateInstance(declarationType, propertyInfo);
+                    events.Add((StateMachineRegistration)declaration);
                 }
             }
 
@@ -421,7 +424,7 @@ namespace Automatonymous
                 if (@event != null)
                 {
                     var builderType = typeof(CorrelatedByEventCorrelationBuilder<,>).MakeGenericType(typeof(TInstance), typeof(TData));
-                    var builder = (EventCorrelationBuilder<TInstance>)Activator.CreateInstance(builderType, machine, @event);
+                    var builder = (IEventCorrelationBuilder)Activator.CreateInstance(builderType, machine, @event);
 
                     machine._eventCorrelations[@event] = builder.Build();
                 }

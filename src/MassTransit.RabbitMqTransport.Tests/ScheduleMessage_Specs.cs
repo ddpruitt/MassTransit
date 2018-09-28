@@ -40,11 +40,11 @@ namespace MassTransit.RabbitMqTransport.Tests
         Task<ConsumeContext<SecondMessage>> _second;
         Task<ConsumeContext<FirstMessage>> _first;
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _first = Handler<FirstMessage>(configurator, async context =>
             {
-                await context.ScheduleMessage(DateTime.Now, new SecondMessage());
+                await context.ScheduleSend(DateTime.Now, new SecondMessage());
 
                 await context.ReceiveContext.CompleteTask;
             });
@@ -86,11 +86,11 @@ namespace MassTransit.RabbitMqTransport.Tests
         Task<ConsumeContext<SecondMessage>> _second;
         Task<ConsumeContext<FirstMessage>> _first;
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _first = Handler<FirstMessage>(configurator, async context =>
             {
-                await context.ScheduleMessage(DateTime.Now + TimeSpan.FromSeconds(3), new SecondMessage());
+                await context.ScheduleSend(TimeSpan.FromSeconds(3), new SecondMessage());
 
                 await context.ReceiveContext.CompleteTask;
             });
@@ -132,7 +132,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         Task<ConsumeContext<SecondMessage>> _second;
         Task<ConsumeContext<FirstMessage>> _first;
 
-        protected override void ConfigureRabbitMqReceiveEndoint(IRabbitMqReceiveEndpointConfigurator configurator)
+        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
         {
             _first = Handler<FirstMessage>(configurator, async context =>
             {

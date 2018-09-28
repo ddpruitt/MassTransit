@@ -53,7 +53,7 @@ namespace MassTransit.Context
                 if (Message == null)
                     throw new SendException(typeof(TMessage), DestinationAddress, "No message specified");
 
-                using (var memoryStream = new MemoryStream())
+                using (var memoryStream = new MemoryStream(8192))
                 {
                     Serializer.Serialize(memoryStream, this);
 
@@ -85,7 +85,7 @@ namespace MassTransit.Context
 
         public IMessageSerializer Serializer
         {
-            get { return _serializer; }
+            get => _serializer;
             set
             {
                 _serializer = value;

@@ -16,6 +16,7 @@ namespace MassTransit.Serialization
     using System.Collections.Generic;
     using System.IO;
     using System.Net.Mime;
+    using System.Reflection;
     using System.Runtime.Remoting.Messaging;
     using System.Runtime.Serialization.Formatters.Binary;
     using Util;
@@ -41,6 +42,7 @@ namespace MassTransit.Serialization
         public const string RequestIdKey = "RequestId";
         public const string ResponseAddressKey = "ResponseAddress";
         public const string SourceAddressKey = "SourceAddress";
+        public const string SentTimeKey = "SentTime";
         public const string HostInfoKey = "HostInfo";
         public static readonly ContentType BinaryContentType = new ContentType(ContentTypeHeaderValue);
 
@@ -52,7 +54,7 @@ namespace MassTransit.Serialization
             if (message == null)
                 throw new ArgumentNullException(nameof(context), "The message must not be null");
 
-            Type t = message.GetType();
+            Type t = message.GetType().GetTypeInfo();
             if (!t.IsSerializable)
             {
                 throw new ConventionException(
@@ -101,75 +103,11 @@ namespace MassTransit.Serialization
             if (context.TimeToLive.HasValue)
                 headers.Add(ExpirationTimeKey, DateTime.UtcNow + context.TimeToLive.Value);
 
+            headers.Add(SentTimeKey, DateTime.UtcNow);
+
             headers.Add(new Header(HostInfoKey, HostMetadataCache.Host));
 
             return headers.ToArray();
-        }
-
-        static void MapNameValuePair(ReceiveContext context, Header header)
-        {
-//            switch (header.Name)
-//            {
-//                case SourceAddressKey:
-//                    context.SetSourceAddress(GetAsUri(header.Value));
-//                    break;
-//
-//                case ResponseAddressKey:
-//                    context.SetResponseAddress(GetAsUri(header.Value));
-//                    break;
-//
-//                case DestinationAddressKey:
-//                    context.SetDestinationAddress(GetAsUri(header.Value));
-//                    break;
-//
-//                case FaultAddressKey:
-//                    context.SetFaultAddress(GetAsUri(header.Value));
-//                    break;
-//
-//                case RequestIdKey:
-//                    context.SetRequestId((string)header.Value);
-//                    break;
-//
-//                case ConversationIdKey:
-//                    context.SetConversationId((string)header.Value);
-//                    break;
-//
-//                case CorrelationIdKey:
-//                    context.SetCorrelationId((string)header.Value);
-//                    break;
-//
-//                case RetryCountKey:
-//                    context.SetRetryCount((int)header.Value);
-//                    break;
-//
-//                case MessageTypeKey:
-//                    context.SetMessageType((string)header.Value);
-//                    break;
-//
-//                case NetworkKey:
-//                    context.SetNetwork((string)header.Value);
-//                    break;
-//
-//                case ExpirationTimeKey:
-//                    context.SetExpirationTime((DateTime)header.Value);
-//                    break;
-//
-//                default:
-//                    if (header.MustUnderstand)
-//                        _log.WarnFormat("The header was not understood: " + header.Name);
-//                    break;
-//            }
-        }
-
-        static Uri GetAsUri(object value)
-        {
-            if (value == null)
-                return null;
-
-            if (value.GetType() != typeof(Uri))
-                return null;
-
-            return (Uri)value;
         }
     }
 }

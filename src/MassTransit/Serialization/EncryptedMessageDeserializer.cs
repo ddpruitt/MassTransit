@@ -51,9 +51,9 @@ namespace MassTransit.Serialization
             try
             {
                 MessageEnvelope envelope;
-                using (Stream body = receiveContext.GetBody())
+                using (Stream body = receiveContext.GetBodyStream())
                 using (Stream cryptoStream = _provider.GetDecryptStream(body, receiveContext))
-                using (var jsonReader = new BsonReader(cryptoStream))
+                using (var jsonReader = new BsonDataReader(cryptoStream))
                 {
                     envelope = _deserializer.Deserialize<MessageEnvelope>(jsonReader);
                 }

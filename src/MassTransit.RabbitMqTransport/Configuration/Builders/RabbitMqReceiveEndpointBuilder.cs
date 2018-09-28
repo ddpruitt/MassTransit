@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,65 +12,61 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.RabbitMqTransport.Builders
 {
-    using System;
-    using System.Collections.Generic;
+    using Configuration;
+    using Contexts;
     using GreenPipes;
     using MassTransit.Builders;
-    using MassTransit.Pipeline;
     using Topology;
-    using Transport;
-    using Transports;
+    using Topology.Builders;
 
 
     public class RabbitMqReceiveEndpointBuilder :
         ReceiveEndpointBuilder,
-        IRabbitMqReceiveEndpointBuilder
+        IReceiveEndpointBuilder
     {
-        readonly bool _bindMessageExchanges;
-        readonly List<ExchangeBindingSettings> _exchangeBindings;
-        readonly IRabbitMqHost _host;
+        readonly IRabbitMqReceiveEndpointConfiguration _configuration;
 
-        public RabbitMqReceiveEndpointBuilder(IConsumePipe consumePipe, IBusBuilder busBuilder, bool bindMessageExchanges, IRabbitMqHost host)
-            : base(consumePipe, busBuilder)
+        public RabbitMqReceiveEndpointBuilder(IRabbitMqReceiveEndpointConfiguration configuration)
+            : base(configuration)
         {
-            _bindMessageExchanges = bindMessageExchanges;
-            _host = host;
-
-            _exchangeBindings = new List<ExchangeBindingSettings>();
+            _configuration = configuration;
         }
 
         public override ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
         {
-            if (_bindMessageExchanges)
-                _exchangeBindings.AddRange(typeof(T).GetExchangeBindings(_host.Settings.MessageNameFormatter));
+            if (_configuration.BindMessageExchanges)
+            {
+                _configuration.Topology.Consume
+                    .GetMessageTopology<T>()
+                    .Bind();
+            }
 
             return base.ConnectConsumePipe(pipe);
         }
 
-        public void AddExchangeBindings(params ExchangeBindingSettings[] bindings)
+        public RabbitMqReceiveEndpointContext CreateReceiveEndpointContext()
         {
-            _exchangeBindings.AddRange(bindings);
+            var brokerTopology = BuildTopology(_configuration.Settings);
+
+            return new RabbitMqQueueReceiveEndpointContext(_configuration, brokerTopology, ReceiveObservers, TransportObservers, EndpointObservers);
         }
 
-        public ISendEndpointProvider CreateSendEndpointProvider(Uri sourceAddress, params ISendPipeSpecification[] specifications)
+        BrokerTopology BuildTopology(ReceiveSettings settings)
         {
-            var pipe = CreateSendPipe(specifications);
+            var topologyBuilder = new ReceiveEndpointBrokerTopologyBuilder();
 
-            var provider = new RabbitMqSendEndpointProvider(MessageSerializer, sourceAddress, SendTransportProvider, pipe);
+            topologyBuilder.Queue =
+                topologyBuilder.QueueDeclare(settings.QueueName, settings.Durable, settings.AutoDelete, settings.Exclusive, settings.QueueArguments);
 
-            return new SendEndpointCache(provider);
-        }
+            topologyBuilder.Exchange = topologyBuilder.ExchangeDeclare(settings.ExchangeName ?? settings.QueueName, settings.ExchangeType, settings.Durable,
+                settings.AutoDelete,
+                settings.ExchangeArguments);
 
-        public IPublishEndpointProvider CreatePublishEndpointProvider(Uri sourceAddress, params IPublishPipeSpecification[] specifications)
-        {
-            var pipe = CreatePublishPipe(specifications);
+            topologyBuilder.QueueBind(topologyBuilder.Exchange, topologyBuilder.Queue, settings.RoutingKey, settings.BindingArguments);
 
-            return new RabbitMqPublishEndpointProvider(_host, MessageSerializer, sourceAddress, pipe);
-        }
+            _configuration.Topology.Consume.Apply(topologyBuilder);
 
-        public IEnumerable<ExchangeBindingSettings> GetExchangeBindings()
-        {
-            return _exchangeBindings;
+            return topologyBuilder.BuildTopologyLayout();
         }
     }
 }

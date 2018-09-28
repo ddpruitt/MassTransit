@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2015 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,6 +12,9 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.RabbitMqTransport
 {
+    using System;
+
+
     /// <summary>
     /// Configures a queue/exchange pair in RabbitMQ
     /// </summary>
@@ -19,22 +22,10 @@ namespace MassTransit.RabbitMqTransport
         IExchangeConfigurator
     {
         /// <summary>
-        /// Specify the maximum number of concurrent messages that are consumed
-        /// </summary>
-        /// <value>The limit</value>
-        ushort PrefetchCount { set; }
-
-        /// <summary>
         /// Specify that the queue is exclusive to this process and cannot be accessed by other processes
         /// at the same time.
         /// </summary>
         bool Exclusive { set; }
-
-        /// <summary>
-        /// Purge the messages from an existing queue on startup (note that upon reconnection to the server
-        /// the queue will not be purged again, only when the service is restarted).
-        /// </summary>
-        bool PurgeOnStartup { set; }
 
         /// <summary>
         /// Sets the queue to be lazy (using less memory)
@@ -47,6 +38,13 @@ namespace MassTransit.RabbitMqTransport
         /// <param name="key">The argument key</param>
         /// <param name="value">The argument value</param>
         void SetQueueArgument(string key, object value);
+
+        /// <summary>
+        /// Set the queue argument to the TimeSpan (which is converted to milliseconds)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        void SetQueueArgument(string key, TimeSpan value);
 
         /// <summary>
         /// Enable the message priority for the queue, specifying the maximum priority available

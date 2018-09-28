@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,21 +15,37 @@ namespace MassTransit.RabbitMqTransport
     using System;
     using System.ComponentModel;
     using MassTransit.Builders;
+    using Topology;
 
 
     public interface IRabbitMqBusFactoryConfigurator :
         IBusFactoryConfigurator,
-        IQueueConfigurator
+        IQueueEndpointConfigurator
     {
-        /// <summary>
-        /// Enables RabbitMQ publish acknowledgement, so that the Task returned from Send/Publish 
-        /// is not completed until the message has been confirmed by the broker.
-        /// </summary>
-        [Obsolete("This is now on the host configuration, and this setting no longer has any effect")]
-        bool PublisherConfirmation { set; }
+        new IRabbitMqSendTopologyConfigurator SendTopology { get; }
 
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        void AddBusFactorySpecification(IBusFactorySpecification<IBusBuilder> specification);
+        new IRabbitMqPublishTopologyConfigurator PublishTopology { get; }
+
+        /// <summary>
+        /// Set to true if the topology should be deployed only
+        /// </summary>
+        bool DeployTopologyOnly { set; }
+
+        /// <summary>
+        /// Configure the send topology of the message type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="configureTopology"></param>
+        void Send<T>(Action<IRabbitMqMessageSendTopologyConfigurator<T>> configureTopology)
+            where T : class;
+
+        /// <summary>
+        /// Configure the send topology of the message type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="configureTopology"></param>
+        void Publish<T>(Action<IRabbitMqMessagePublishTopologyConfigurator<T>> configureTopology)
+            where T : class;
 
         [EditorBrowsable(EditorBrowsableState.Never)]
         void AddReceiveEndpointSpecification(IReceiveEndpointSpecification<IBusBuilder> specification);

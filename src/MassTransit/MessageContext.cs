@@ -13,14 +13,12 @@
 namespace MassTransit
 {
     using System;
-    using GreenPipes;
 
 
     /// <summary>
     /// The message context includes the headers that are transferred with the message
     /// </summary>
-    public interface MessageContext :
-        PipeContext
+    public interface MessageContext
     {
         /// <summary>
         /// The messageId assigned to the message when it was initially Sent. This is different
@@ -78,6 +76,11 @@ namespace MassTransit
         /// The fault addres to which fault events should be sent if the message consumer faults
         /// </summary>
         Uri FaultAddress { get; }
+
+        /// <summary>
+        /// When the message was originally sent
+        /// </summary>
+        DateTime? SentTime { get; }
 
         /// <summary>
         /// Additional application-specific headers that are added to the message by the application

@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -42,11 +42,25 @@ namespace MassTransit.RabbitMqTransport.Topology
         /// </summary>
         IDictionary<string, object> QueueArguments { get; }
 
+        string RoutingKey { get; }
+
+        IDictionary<string, object> BindingArguments { get; }
+
         /// <summary>
         /// If True, and a queue name is specified, if the queue exists and has messages, they are purged at startup
         /// If the connection is reset, messages are not purged until the service is reset
         /// </summary>
         bool PurgeOnStartup { get; }
+
+        /// <summary>
+        /// Arguments passed to the basicConsume
+        /// </summary>
+        IDictionary<string, object> ConsumeArguments { get; }
+
+        /// <summary>
+        /// Should the consumer have exclusive access to the queue
+        /// </summary>
+        bool ExclusiveConsumer { get; }
 
         /// <summary>
         /// Get the input address for the transport on the specified host

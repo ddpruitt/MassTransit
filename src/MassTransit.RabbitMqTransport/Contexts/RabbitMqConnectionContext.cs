@@ -12,74 +12,72 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.RabbitMqTransport.Contexts
 {
+    using System;
+    using System.Threading;
     using System.Threading.Tasks;
     using GreenPipes;
     using GreenPipes.Payloads;
     using Logging;
     using RabbitMQ.Client;
+    using Topology;
     using Util;
 
 
     public class RabbitMqConnectionContext :
         BasePipeContext,
-        ConnectionContext
+        ConnectionContext,
+        IAsyncDisposable
     {
         static readonly ILog _log = Logger.Get<RabbitMqConnectionContext>();
 
         readonly IConnection _connection;
-        readonly RabbitMqHostSettings _hostSettings;
-        readonly ITaskParticipant _participant;
         readonly LimitedConcurrencyLevelTaskScheduler _taskScheduler;
 
-        public RabbitMqConnectionContext(IConnection connection, RabbitMqHostSettings hostSettings, ITaskSupervisor supervisor)
-            : this(connection, hostSettings,
-                supervisor.CreateParticipant($"{TypeMetadataCache<RabbitMqConnectionContext>.ShortName} - {hostSettings.ToDebugString()}"))
-        {
-        }
-
-        RabbitMqConnectionContext(IConnection connection, RabbitMqHostSettings hostSettings, ITaskParticipant participant)
-            : base(new PayloadCache(), participant.StoppedToken)
+        public RabbitMqConnectionContext(IConnection connection, RabbitMqHostSettings hostSettings, IRabbitMqHostTopology topology, string description,
+            CancellationToken cancellationToken)
+            : base(new PayloadCache(), cancellationToken)
         {
             _connection = connection;
-            _hostSettings = hostSettings;
+            HostSettings = hostSettings;
+            Topology = topology;
 
-            _participant = participant;
+            Description = description;
 
             _taskScheduler = new LimitedConcurrencyLevelTaskScheduler(1);
 
             connection.ConnectionShutdown += OnConnectionShutdown;
         }
 
-        public RabbitMqHostSettings HostSettings => _hostSettings;
+        public IRabbitMqHostTopology Topology { get; }
+        public RabbitMqHostSettings HostSettings { get; }
+        public string Description { get; }
+        public Uri HostAddress => HostSettings.HostAddress;
 
         public Task<IModel> CreateModel()
         {
-            return Task.Factory.StartNew(() => _connection.CreateModel(),
-                _participant.StoppedToken, TaskCreationOptions.None, _taskScheduler);
+            return Task.Factory.StartNew(() => _connection.CreateModel(), CancellationToken, TaskCreationOptions.None, _taskScheduler);
         }
 
-        public IConnection Connection => _connection;
+        IConnection ConnectionContext.Connection => _connection;
 
-        public void Dispose()
+        Task IAsyncDisposable.DisposeAsync(CancellationToken cancellationToken)
         {
             _connection.ConnectionShutdown -= OnConnectionShutdown;
 
             if (_log.IsDebugEnabled)
-                _log.DebugFormat("Disconnecting: {0}", _hostSettings.ToDebugString());
+                _log.DebugFormat("Disconnecting: {0}", Description);
 
             _connection.Cleanup(200, "Connection Disposed");
 
             if (_log.IsDebugEnabled)
-                _log.DebugFormat("Disconnected: {0}", _hostSettings.ToDebugString());
+                _log.DebugFormat("Disconnected: {0}", Description);
 
-            _participant.SetComplete();
+            return TaskUtil.Completed;
         }
 
         void OnConnectionShutdown(object connection, ShutdownEventArgs reason)
         {
             _connection.Cleanup(reason.ReplyCode, reason.ReplyText);
-
-            _participant.SetComplete();
         }
     }
 }

@@ -25,26 +25,24 @@ namespace MassTransit.AzureServiceBusTransport.Transport
         readonly IRetryPolicy _retryPolicy;
         readonly TopicClient _topicClient;
 
-        public TopicSendClient(TopicClient topicClient)
+        public TopicSendClient(TopicClient topicClient, IRetryPolicy retryPolicy)
         {
             _topicClient = topicClient;
-
-            _retryPolicy = Retry.CreatePolicy(x =>
-            {
-                x.Handle<ServerBusyException>();
-                x.Handle<MessagingException>(exception => exception.IsTransient || exception.IsWrappedExceptionTransient());
-                x.Handle<MessagingCommunicationException>(exception => exception.IsTransient || exception.IsWrappedExceptionTransient());
-                x.Handle<TimeoutException>();
-
-                x.Interval(5, TimeSpan.FromSeconds(10));
-            });
+            _retryPolicy = retryPolicy;
         }
 
         public string Path => _topicClient.Path;
 
-        public Task Send(BrokeredMessage message)
+        public async Task Send(BrokeredMessage message)
         {
-            return _retryPolicy.Retry(() => _topicClient.SendAsync(message));
+            try
+            {
+                await _retryPolicy.Retry(() => _topicClient.SendAsync(message)).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException exception) when (exception.Message.Contains("been consumed"))
+            {
+                // this is okay, it means we timed out and upon retry the message was accepted
+            }
         }
 
         public Task Close()

@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -15,10 +15,10 @@ namespace MassTransit.Transports
     using System;
     using System.Threading;
     using System.Threading.Tasks;
+    using Context;
     using Events;
     using GreenPipes;
     using Pipeline;
-    using Pipeline.Observables;
 
 
     /// <summary>
@@ -27,26 +27,27 @@ namespace MassTransit.Transports
     /// filters on the receive context. 
     /// </summary>
     public class ReceiveEndpoint :
-        IReceiveEndpoint
+        IReceiveEndpointControl
     {
-        readonly ReceiveEndpointObservable _observers;
         readonly IReceivePipe _receivePipe;
         readonly IReceiveTransport _receiveTransport;
         ConnectHandle _handle;
+        readonly ReceiveEndpointContext _context;
 
-        public ReceiveEndpoint(IReceiveTransport receiveTransport, IReceivePipe receivePipe)
+        public ReceiveEndpoint(IReceiveTransport receiveTransport, IReceivePipe receivePipe, ReceiveEndpointContext context)
         {
+            _context = context;
             _receiveTransport = receiveTransport;
             _receivePipe = receivePipe;
 
-            _observers = new ReceiveEndpointObservable();
-
-            _handle = receiveTransport.ConnectReceiveTransportObserver(new Observer(this));
+            _handle = receiveTransport.ConnectReceiveTransportObserver(new Observer(this, context.EndpointObservers));
         }
 
-        ReceiveEndpointHandle IReceiveEndpoint.Start()
+        ReceiveEndpointContext IReceiveEndpoint.Context => _context;
+
+        ReceiveEndpointHandle IReceiveEndpointControl.Start()
         {
-            var transportHandle = _receiveTransport.Start(_receivePipe);
+            var transportHandle = _receiveTransport.Start();
 
             return new Handle(transportHandle);
         }
@@ -65,7 +66,7 @@ namespace MassTransit.Transports
 
         ConnectHandle IReceiveEndpointObserverConnector.ConnectReceiveEndpointObserver(IReceiveEndpointObserver observer)
         {
-            return _observers.Connect(observer);
+            return _context.EndpointObservers.Connect(observer);
         }
 
         ConnectHandle IConsumeObserverConnector.ConnectConsumeObserver(IConsumeObserver observer)
@@ -80,44 +81,67 @@ namespace MassTransit.Transports
 
         ConnectHandle IConsumePipeConnector.ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
         {
-            return _receivePipe.ConsumePipe.ConnectConsumePipe(pipe);
+            return _receivePipe.ConnectConsumePipe(pipe);
         }
 
         ConnectHandle IRequestPipeConnector.ConnectRequestPipe<T>(Guid requestId, IPipe<ConsumeContext<T>> pipe)
         {
-            return _receivePipe.ConsumePipe.ConnectRequestPipe(requestId, pipe);
+            return _receivePipe.ConnectRequestPipe(requestId, pipe);
         }
 
-        public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
+        ConnectHandle IPublishObserverConnector.ConnectPublishObserver(IPublishObserver observer)
         {
             return _receiveTransport.ConnectPublishObserver(observer);
         }
 
+        ConnectHandle ISendObserverConnector.ConnectSendObserver(ISendObserver observer)
+        {
+            return _receiveTransport.ConnectSendObserver(observer);
+        }
 
-        public class Observer :
+        public Task<ISendEndpoint> GetSendEndpoint(Uri address)
+        {
+            return _context.SendEndpointProvider.GetSendEndpoint(address);
+        }
+
+        public IPublishEndpoint CreatePublishEndpoint(Uri sourceAddress, ConsumeContext context = null)
+        {
+            return _context.PublishEndpointProvider.CreatePublishEndpoint(sourceAddress, context);
+        }
+
+        public Task<ISendEndpoint> GetPublishSendEndpoint<T>(T message)
+            where T : class
+        {
+            return _context.PublishEndpointProvider.GetPublishSendEndpoint(message);
+        }
+
+
+        class Observer :
             IReceiveTransportObserver
         {
             readonly ReceiveEndpoint _endpoint;
+            readonly IReceiveEndpointObserver _observer;
 
-            public Observer(ReceiveEndpoint endpoint)
+            public Observer(ReceiveEndpoint endpoint, IReceiveEndpointObserver observer)
             {
                 _endpoint = endpoint;
+                _observer = observer;
             }
 
             public Task Ready(ReceiveTransportReady ready)
             {
-                return _endpoint._observers.Ready(new ReceiveEndpointReadyEvent(ready.InputAddress, _endpoint));
+                return _observer.Ready(new ReceiveEndpointReadyEvent(ready.InputAddress, _endpoint));
             }
 
             public Task Completed(ReceiveTransportCompleted completed)
             {
-                return _endpoint._observers.Completed(new ReceiveEndpointCompletedEvent(completed.InputAddress,
-                    completed.DeliveryCount, completed.ConcurrentDeliveryCount, _endpoint));
+                return _observer.Completed(new ReceiveEndpointCompletedEvent(completed.InputAddress, completed.DeliveryCount, completed.ConcurrentDeliveryCount,
+                    _endpoint));
             }
 
             public Task Faulted(ReceiveTransportFaulted faulted)
             {
-                return _endpoint._observers.Faulted(new ReceiveEndpointFaultedEvent(faulted.InputAddress, faulted.Exception, _endpoint));
+                return _observer.Faulted(new ReceiveEndpointFaultedEvent(faulted.InputAddress, faulted.Exception, _endpoint));
             }
         }
 

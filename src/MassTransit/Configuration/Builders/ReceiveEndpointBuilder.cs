@@ -1,4 +1,4 @@
-// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+// Copyright 2007-2018 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -12,59 +12,51 @@
 // specific language governing permissions and limitations under the License.
 namespace MassTransit.Builders
 {
-    using System;
-    using System.Net.Mime;
+    using Configuration;
     using GreenPipes;
     using Pipeline;
+    using Pipeline.Observables;
 
 
     public abstract class ReceiveEndpointBuilder
     {
-        readonly IBusBuilder _builder;
+        readonly IEndpointConfiguration _configuration;
         readonly IConsumePipe _consumePipe;
-        readonly SerializerBuilder _serializerBuilder;
+        public readonly ReceiveObservable ReceiveObservers;
+        public readonly ReceiveTransportObservable TransportObservers;
+        public readonly ReceiveEndpointObservable EndpointObservers;
 
-        protected ReceiveEndpointBuilder(IConsumePipe consumePipe, IBusBuilder builder)
+        protected ReceiveEndpointBuilder(IReceiveEndpointConfiguration configuration)
         {
-            _builder = builder;
-            _consumePipe = consumePipe;
-            _serializerBuilder = builder.CreateSerializerBuilder();
+            _configuration = configuration;
+
+            _consumePipe = configuration.ConsumePipe;
+
+            ReceiveObservers = new ReceiveObservable();
+            TransportObservers = new ReceiveTransportObservable();
+            EndpointObservers = new ReceiveEndpointObservable();
         }
 
         public IConsumePipe ConsumePipe => _consumePipe;
-        public IMessageSerializer MessageSerializer => _serializerBuilder.Serializer;
-        public IMessageDeserializer MessageDeserializer => _serializerBuilder.Deserializer;
+        public IMessageDeserializer MessageDeserializer => _configuration.Serialization.Deserializer;
 
-        public ISendTransportProvider SendTransportProvider => _builder.SendTransportProvider;
-
-        public void SetMessageSerializer(SerializerFactory serializerFactory)
+        public virtual ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe)
+            where T : class
         {
-            _serializerBuilder.SetSerializer(serializerFactory);
+            IPipe<ConsumeContext<T>> messagePipe = _configuration.Consume.Specification.GetMessageSpecification<T>().BuildMessagePipe(pipe);
+
+            return _consumePipe.ConnectConsumePipe(messagePipe);
         }
 
-        public void AddMessageDeserializer(ContentType contentType, DeserializerFactory deserializerFactory)
-        {
-            _serializerBuilder.AddDeserializer(contentType, deserializerFactory);
-        }
-
-        public virtual ConnectHandle ConnectConsumePipe<T>(IPipe<ConsumeContext<T>> pipe) where T : class
-        {
-            return _consumePipe.ConnectConsumePipe(pipe);
-        }
-
-        public ConnectHandle ConnectConsumeMessageObserver<T>(IConsumeMessageObserver<T> observer) where T : class
+        public ConnectHandle ConnectConsumeMessageObserver<T>(IConsumeMessageObserver<T> observer)
+            where T : class
         {
             return _consumePipe.ConnectConsumeMessageObserver(observer);
         }
 
-        protected ISendPipe CreateSendPipe(params ISendPipeSpecification[] specifications)
+        public ConnectHandle ConnectReceiveEndpointObserver(IReceiveEndpointObserver observer)
         {
-            return _builder.CreateSendPipe(specifications);
-        }
-
-        protected IPublishPipe CreatePublishPipe(params IPublishPipeSpecification[] specifications)
-        {
-            return _builder.CreatePublishPipe(specifications);
+            return EndpointObservers.Connect(observer);
         }
     }
 }

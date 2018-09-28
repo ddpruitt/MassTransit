@@ -15,14 +15,13 @@ namespace MassTransit.ConsumeConfigurators
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using Configuration;
     using ConsumeConnectors;
+    using ConsumerSpecifications;
     using GreenPipes;
 
 
     public class ConsumerConfigurator<TConsumer> :
         IConsumerConfigurator<TConsumer>,
-        IConsumerConfigurationObserverConnector,
         IReceiveEndpointSpecification
         where TConsumer : class, IConsumer
     {

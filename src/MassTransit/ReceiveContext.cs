@@ -17,6 +17,7 @@ namespace MassTransit
     using System.Net.Mime;
     using System.Threading.Tasks;
     using GreenPipes;
+    using Topology;
 
 
     /// <summary>
@@ -68,22 +69,28 @@ namespace MassTransit
         /// Returns the message body as a stream that can be deserialized. The stream
         /// must be disposed by the caller, a reference is not retained
         /// </summary>
-        Stream GetBody();
+        Stream GetBodyStream();
+
+        /// <summary>
+        /// Returns the body as a byte[]
+        /// </summary>
+        /// <returns></returns>
+        byte[] GetBody();
 
         /// <summary>
         /// Notify that a message has been consumed from the received context
         /// </summary>
         /// <param name="context">The consume context of the message</param>
-        /// <param name="duration"></param>
-        /// <param name="consumerType"></param>
+        /// <param name="duration">The time spent by the consumer</param>
+        /// <param name="consumerType">The consumer type</param>
         Task NotifyConsumed<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType)
             where T : class;
 
         /// <summary>
         /// Notify that a message consumer faulted
         /// </summary>
-        /// <param name="context"></param>
-        /// <param name="duration"></param>
+        /// <param name="context">The consume context of the message</param>
+        /// <param name="duration">The time spent by the consumer</param>
         /// <param name="consumerType">The messsage consumer type that faulted</param>
         /// <param name="exception">The exception that occurred</param>
         Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
@@ -113,5 +120,10 @@ namespace MassTransit
         /// The publish endpoint provider from the transport
         /// </summary>
         IPublishEndpointProvider PublishEndpointProvider { get; }
+
+        /// <summary>
+        /// The publish topology of the underlying transport
+        /// </summary>
+        IPublishTopology PublishTopology { get; }
     }
 }

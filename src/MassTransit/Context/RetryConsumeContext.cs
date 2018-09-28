@@ -1,4 +1,4 @@
-﻿// Copyright 2007-2016 Chris Patterson, Dru Sellers, Travis Smith, et. al.
+﻿// Copyright 2007-2017 Chris Patterson, Dru Sellers, Travis Smith, et. al.
 //  
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 // this file except in compliance with the License. You may obtain a copy of the 
@@ -16,6 +16,8 @@ namespace MassTransit.Context
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading.Tasks;
+    using GreenPipes;
+    using GreenPipes.Payloads;
     using Util;
 
 
@@ -23,30 +25,54 @@ namespace MassTransit.Context
         ConsumeContextProxy,
         ConsumeRetryContext
     {
+        readonly IRetryPolicy _retryPolicy;
         readonly ConsumeContext _context;
         readonly IList<PendingFault> _pendingFaults;
 
-        public RetryConsumeContext(ConsumeContext context)
-            : base(context)
+        public RetryConsumeContext(ConsumeContext context, IRetryPolicy retryPolicy)
+            : base(context, new PayloadCacheScope(context))
         {
+            _retryPolicy = retryPolicy;
             _context = context;
             _pendingFaults = new List<PendingFault>();
         }
 
         public int RetryAttempt { get; set; }
 
-        public override Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
+        public override bool TryGetMessage<T>(out ConsumeContext<T> consumeContext)
         {
-            _pendingFaults.Add(new PendingFault<T>(context, duration, consumerType, exception));
+            if (base.TryGetMessage(out ConsumeContext<T> messageContext))
+            {
+                consumeContext = new MessageConsumeContext<T>(this, messageContext.Message);
+                return true;
+            }
 
-            return TaskUtil.Completed;
+            consumeContext = null;
+            return false;
         }
 
-        public Task ClearPendingFaults()
+        public override Task NotifyFaulted<T>(ConsumeContext<T> context, TimeSpan duration, string consumerType, Exception exception)
         {
-            _pendingFaults.Clear();
+            if (_retryPolicy.IsHandled(exception))
+            {
+                _pendingFaults.Add(new PendingFault<T>(context, duration, consumerType, exception));
+                return TaskUtil.Completed;
+            }
 
-            return TaskUtil.Completed;
+            return _context.NotifyFaulted(context, duration, consumerType, exception);
+        }
+
+        public RetryConsumeContext CreateNext()
+        {
+            return new RetryConsumeContext(_context, _retryPolicy);
+        }
+
+        protected IRetryPolicy RetryPolicy => _retryPolicy;
+
+        public virtual TContext CreateNext<TContext>()
+            where TContext : RetryConsumeContext
+        {
+            throw new InvalidOperationException("This is only supported by a derived type");
         }
 
         public Task NotifyPendingFaults()
@@ -93,8 +119,8 @@ namespace MassTransit.Context
     {
         readonly ConsumeContext<T> _context;
 
-        public RetryConsumeContext(ConsumeContext<T> context)
-            : base(context)
+        public RetryConsumeContext(ConsumeContext<T> context, IRetryPolicy retryPolicy)
+            : base(context, retryPolicy)
         {
             _context = context;
         }
@@ -103,12 +129,18 @@ namespace MassTransit.Context
 
         public Task NotifyConsumed(TimeSpan duration, string consumerType)
         {
-            return _context.NotifyConsumed(duration, consumerType);
+            return NotifyConsumed(_context, duration, consumerType);
         }
 
         public Task NotifyFaulted(TimeSpan duration, string consumerType, Exception exception)
         {
             return NotifyFaulted(_context, duration, consumerType, exception);
+        }
+
+        public override TContext CreateNext<TContext>()
+        {
+            return new RetryConsumeContext<T>(_context, RetryPolicy) as TContext
+                ?? throw new ArgumentException($"The context type is not valid: {TypeMetadataCache<T>.ShortName}");
         }
     }
 }
